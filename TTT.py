@@ -1,5 +1,7 @@
 #This will be the base class for playing Tic-Tac-Toe
 
+import MMai
+
 class TTT:
     def __init__(self):
         self.board = [[" ", " ", " "] for _ in range(3)]
@@ -9,7 +11,7 @@ class TTT:
         return board_str.replace("\n", "\n" + "-" * 9 + "\n") 
     
     #NOTE When you want to add bot, create the branch here
-    def begin_game(self):
+    def begin_game(self, humans=False):
         #Give cordinate instructions
         instructions = [[str((x, y)) for x in range(3)] for y in range(3)]
         instructions = "\n".join([" | ".join(row) for row in instructions])
@@ -22,7 +24,10 @@ class TTT:
         self.print_board()
 
         #Begin the game with the person
-        self.human_game()
+        if humans:
+            self.human_game()
+        else: 
+            self.ai_game()
 
     def human_game(self) -> None:
         """
@@ -50,16 +55,68 @@ class TTT:
             if self.check_win() == True:
                 print("Player 'O' wins :)")
                 return
+        
+    def ai_game(self) -> None:
+        ai = MMai.MMai()
+        moves_so_far = []
+        incoming = None
+        while incoming not in ("y", "n"):
+            incoming = input("Will the player go first: (y/n)? \n")
+        
+        if incoming == "y":
+            player_marker = "X"
+            ai_marker = "O"
+            print("Player 'X' will go...")
+            x,y = self.human_move(player_marker, return_move = True)
+            moves_so_far.append([x,y])
+            self.print_board()
+        else:
+            player_marker = "O"
+            ai_marker = "X"
+
+        while True:
+            x, y = ai.minimax(moves_so_far)
+            print(f"AI will go ({x},{y})...")
+            self.board[y][x] = ai_marker
+            moves_so_far.append([x,y])
+            self.print_board()
+            
+            if self.check_stalemate() == True:
+                print("Stalemate, No one wins :(")
+                return
+            if self.check_win() == True:
+                print("AI wins :)")
+                return
+            
+            print("Player will go...")
+            x,y = self.human_move(player_marker, return_move = True)
+            moves_so_far.append([x,y])
+            self.print_board()
+            
+            if self.check_stalemate() == True:
+                print("Stalemate, No one wins :(")
+                return
+            if self.check_win() == True:
+                print("Player wins :)")
+                return
 
 
 
-    def human_move(self, marker:str) -> None:
+
+    def human_move(self, marker:str, return_move = False):
         """
         Asks for an input and makes a move
         """
         while True:
-            x = int(input("Choose a Column (0-2): "))
-            y = int(input("Choose a Row (0-2): "))
+            possible_inputs = ("0", "1", "2")
+            x = input("Choose a Column (0-2): ")
+            y = input("Choose a Row (0-2): ")
+            if x in possible_inputs and y in possible_inputs:
+                x = int(x)
+                y = int(y)
+            else:
+                print("Invalid input. Row and Column must be between 0 and 2.")
+                continue  
             
             if not (0 <= x < 3 and 0 <= y < 3):  
                 print("Invalid input. Row and Column must be between 0 and 2.")
@@ -71,8 +128,11 @@ class TTT:
 
             self.board[y][x] = marker
             break
-
-        return
+        
+        if return_move == True:
+            return x,y
+        else:
+            return  
             
     def print_board(self) -> None:
         """

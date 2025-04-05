@@ -101,3 +101,34 @@ class MMai:
     def load_file(self, filename="tictactoe_outputs") -> None:
         self.df = pd.read_csv(filename)
         return
+    
+    def minimax(self, completed_moves:list) -> tuple[int, int]:
+        #TODO Cleam Up
+        #make a data consiting of possible moves
+        if len(completed_moves) == 0:
+            return 0,0
+
+        df = self.df.copy()
+
+        #This should get a df of a ll the moves that are left
+        for i in range(len(completed_moves)):
+            x, y = completed_moves[i]
+            df = df[df[df.columns[i]] == f"({x},{y})"]
+
+        best_avg = -100000000000000000
+        best_move = None
+        move_col = df.columns[len(completed_moves)]
+        for move in df[move_col].dropna().unique().tolist():
+            move_df = df[df[move_col] == move]
+            
+            if len(completed_moves) % 2 == 0:
+                avg_result = move_df["Result"].mean()
+            else:
+                avg_result = -move_df["Result"].mean()
+
+            if avg_result > best_avg:
+                best_move = move
+                best_avg = avg_result
+
+        x, y = int(best_move[1]), int(best_move[3])
+        return x, y
