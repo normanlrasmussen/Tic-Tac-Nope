@@ -2,4 +2,4 @@ from importlib import reload
 import TTT
 reload(TTT)
 
-TTT.TTT().begin_game(humans=True)
+TTT.TTT().begin_game()
