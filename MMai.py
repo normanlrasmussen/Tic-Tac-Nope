@@ -102,20 +102,21 @@ class MMai:
         self.df = pd.read_csv(filename)
         return
     
-    def minimax(self, completed_moves:list) -> tuple[int, int]:
-        #TODO Cleam Up
-        #make a data consiting of possible moves
+    def ai_move(self, completed_moves:list, type=1):
+        if type == 1:
+            return self.average_win(completed_moves)
+
+    def average_win(self, completed_moves:list) -> tuple[int, int]:
         if len(completed_moves) == 0:
             return 0,0
 
         df = self.df.copy()
 
-        #This should get a df of a ll the moves that are left
         for i in range(len(completed_moves)):
             x, y = completed_moves[i]
             df = df[df[df.columns[i]] == f"({x},{y})"]
 
-        best_avg = -100000000000000000
+        best_avg = -10
         best_move = None
         move_col = df.columns[len(completed_moves)]
         for move in df[move_col].dropna().unique().tolist():
