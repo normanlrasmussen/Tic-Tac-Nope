@@ -1,5 +1,3 @@
-#This will be a mi max AI to simulate all the possible situations of Tic-Tac-Toe
-
 import os
 import pandas as pd
 
@@ -18,7 +16,6 @@ class MMai:
         outputs = []
         
         print("Calculating all senarios of Tic-Tac-Toe")
-
         for i in range(len(combinations)):
             game = [[" " for _ in range(3)] for _ in range(3)]
             x, y = combinations[i]
@@ -33,14 +30,13 @@ class MMai:
         print("Finished saving File for quick recall ;)")
 
     def calculate_recursion_helper(self, moves:list, combinations:list, game:list, marker:list) -> list:        
-        #NOTE, recursion could be optimized by just adding everything directly to a df, instead of a list, or making it compatible for df
         outputs = []
 
-        if_win, winner = self.check_win(game)
-        if if_win == True and winner == "X":
-            return [[moves, 1]] #Win
-        elif if_win == True and winner == "O":
-            return [[moves, -1]] #Lose
+        terminal, winner = self.check_win(game)
+        if terminal and winner == "X":
+            return [[moves, 1]]  # X wins.
+        elif terminal and winner == "O":
+            return [[moves, -1]]  # O wins.
         elif not combinations:
             return [[moves, 0]] #Stalemate
 
@@ -48,21 +44,18 @@ class MMai:
             x, y = combinations[i]
             game[y][x] = marker[0]
             
-            #Update moves
             next_combinations = combinations[:i] + combinations[i + 1:]
             new_moves = moves + [[x, y]]
 
-            # Recursive step
             results = self.calculate_recursion_helper(new_moves, next_combinations, game, marker[::-1])
             outputs.extend(results)
 
-            # Backtrack
             game[y][x] = " "
 
         return outputs
 
-    def check_win(self, game) -> tuple[bool, str]:
-            # Check rows
+    def check_win(self, game) -> tuple:
+        # Check rows
         for row in game:
             if row[0] == row[1] == row[2] and row[0] != " ":
                 return True, row[0]
@@ -85,14 +78,12 @@ class MMai:
 
         for moves, result in self.combinations:
             row = [f"({x},{y})" for x, y in moves]
-
             while len(row) < 9:
                 row.append(None)
             row.append(result)
             outputs.append(row)
             
         columns = [f"Move {i+1}" for i in range(9)] + ["Result"]
-
         df = pd.DataFrame(outputs, columns=columns)
         df.to_csv(filename, index=False) 
         self.df = df
@@ -102,11 +93,13 @@ class MMai:
         self.df = pd.read_csv(filename)
         return
     
-    def ai_move(self, completed_moves:list, type=1):
+    def ai_move(self, completed_moves:list, type=2, board=None):
         if type == 1:
             return self.average_win(completed_moves)
+        if type == 2:
+            return self.minimax_move(board)
 
-    def average_win(self, completed_moves:list) -> tuple[int, int]:
+    def average_win(self, completed_moves:list) -> tuple:
         if len(completed_moves) == 0:
             return 0,0
 
@@ -133,3 +126,65 @@ class MMai:
 
         x, y = int(best_move[1]), int(best_move[3])
         return x, y
+    
+    def minimax(self, game:list, depth:int, is_maximizing:bool) -> int:
+
+        terminal, winner = self.check_win(game)
+        if terminal:
+            return 1 if winner == "X" else -1
+        
+        if all(cell != " " for row in game for cell in row):
+            return 0
+        
+        if is_maximizing:
+            best_score = -10
+            for i in range(3):
+                for j in range(3):
+                    if game[i][j] == " ":
+                        game[i][j] = "X"
+                        score = self.minimax(game, depth + 1, False)
+                        best_score = max(best_score, score)
+                        game[i][j] = " "
+            return best_score
+        else:
+            best_score = float("inf")
+            for i in range(3):
+                for j in range(3):
+                    if game[i][j] == " ":
+                        game[i][j] = "O"
+                        score = self.minimax(game, depth + 1, True)
+                        best_score = min(best_score, score)
+                        game[i][j] = " " 
+            return best_score
+        
+    def minimax_move(self, game:list) -> tuple:
+        
+        count_X = sum(cell == "X" for row in game for cell in row)
+        count_O = sum(cell == "O" for row in game for cell in row)
+        current_marker = "X" if count_X == count_O else "O"
+
+        best_move = None
+        if current_marker == "X":
+            best_score = -float("inf")
+            for i in range(3): 
+                for j in range(3):  
+                    if game[i][j] == " ":
+                        game[i][j] = current_marker
+                        score = self.minimax(game, 0, False)
+                        game[i][j] = " "  
+                        if score > best_score:
+                            best_score = score
+                            best_move = (j, i)
+        else:
+            best_score = float("inf")
+            for i in range(3):
+                for j in range(3):
+                    if game[i][j] == " ":
+                        game[i][j] = current_marker
+                        score = self.minimax(game, 0, True)
+                        game[i][j] = " " 
+                        if score < best_score:
+                            best_score = score
+                            best_move = (j, i) 
+        
+        return best_move
