@@ -58,7 +58,7 @@ class TTN:
                 return
         
     def ai_game(self) -> None:
-        ai = TTTai.TTTai(ai_type=2)
+        ai = None
         moves_so_far = []
         incoming = None
         while incoming not in ("y", "n"):
