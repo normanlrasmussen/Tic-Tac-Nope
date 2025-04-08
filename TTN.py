@@ -1,15 +1,29 @@
 #This is where I want to start building the tic-tac-nope class
 
 class TTN:
-    def __init__(self):
+    def __init__(self, empty_token_list = None):
         self.board = [[" ", " ", " "] for _ in range(3)]
+        self.empty_token = "■"
+        if empty_token_list:
+            self.define_empty_tokens(empty_token_list)
+            
 
+    def define_empty_tokens(self, empty_token_list:list) -> None:
+        for x, y in empty_token_list:
+            self.board[y][x] = "N"
+        
+    def __str__(self):
+        hidden_board = self.board.copy()
+        for x in range(3):
+            for y in range(3):
+                if hidden_board[y][x][0] == "N":
+                    hidden_board[y][x] = self.empty_token
+        board_str = "\n".join([" | ".join(row) for row in hidden_board])
+        return board_str.replace("\n", "\n" + "-" * 9 + "\n") 
 
 
 #----------------Past this line is code I havn't look at yest----------------
-    def __str__(self):
-        board_str = "\n".join([" | ".join(row) for row in self.board])
-        return board_str.replace("\n", "\n" + "-" * 9 + "\n") 
+    
     
     #NOTE When you want to add bot, create the branch here
     def begin_game(self, humans=False):
