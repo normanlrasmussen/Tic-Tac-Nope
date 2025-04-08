@@ -20,6 +20,51 @@ class TTN:
                     hidden_board[y][x] = self.empty_token
         board_str = "\n".join([" | ".join(row) for row in hidden_board])
         return board_str.replace("\n", "\n" + "-" * 9 + "\n") 
+    
+    def can_move(self, x:int, y:int, marker:str) -> bool:
+        if self.board[y][x] == " ":
+            return True
+        elif "N" in self.board[y][x]:
+            if marker == "X" and "X" not in self.board[y][x]:
+                return True
+            elif marker == "Y" and "Y" not in self.board[y][x]:
+                return True
+        else:
+            return False
+        
+    def check_stalemate(self) -> bool:
+        if all(cell != " " for row in self.board for cell in row):
+            return True
+        else: return False
+    
+    def check_win(self) -> tuple:
+        #filter the board
+        filtered_board = self.board.copy()
+        for x in range(3):
+            for y in range(3):
+                if "N" in filtered_board[y][x]:
+                    filtered_board[y][x] = filtered_board[y][x][1]
+        
+        #Check rows
+        for row in filtered_board:
+            if row[0] == row[1] == row[2] and row[0] != " ":
+                return True, row[1]
+
+        #Check columns
+        for i in range(3):
+            if filtered_board[0][i] == filtered_board[1][i] == filtered_board[2][i] and filtered_board[1][i] != " ":
+                return True, filtered_board[1][i]
+        
+        #Check Diagonals
+        if filtered_board[0][0] == filtered_board[1][1] == filtered_board[2][2] and filtered_board[1][1] != " ":
+            return True, filtered_board[1][1] 
+        if filtered_board[2][0] == filtered_board[1][1] == filtered_board[0][2] and filtered_board[1][1] != " ":
+            return True, filtered_board[1][1]
+        
+        #If no conditions are met return false
+        return False, None
+
+        
 
 
 #----------------Past this line is code I havn't look at yest----------------
@@ -158,43 +203,6 @@ class TTN:
         print("\n")
         return
 
-    def can_move(self, x:int, y:int) -> bool:
-        """
-        returns True if a tile is empty, false if it is already filled
-        """
-        return self.board[y][x] == " "
-
-    def check_win(self) -> bool:
-        """
-        Returns True if there is 3 in a row, or False if there is no 3 in a row
-        """
-        
-        #Check rows
-        for row in self.board:
-            if row[0] == row[1] == row[2] and row[0] != " ":
-                return True
-
-        #Check columns
-        for i in range(3):
-            if self.board[0][i] == self.board[1][i] == self.board[2][i] and self.board[1][i] != " ":
-                return True
-        
-        #Check Diagonals
-        if self.board[0][0] == self.board[1][1] == self.board[2][2] and self.board[1][1] != " ":
-            return True 
-        if self.board[2][0] == self.board[1][1] == self.board[0][2] and self.board[1][1] != " ":
-            return True 
-        
-        #If no conditions are met return false
-        return False
     
-    def check_stalemate(self) -> bool:
-        """
-        Returns True if there is a stalemate, False if not
-        """
-        #Gets a tuple of all the pieces
-        all_types = tuple(sum(self.board, []))
-        if self.check_win() == False and " " not in all_types:
-            return True
-        else:
-            return False
+    
+    
