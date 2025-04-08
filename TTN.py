@@ -32,10 +32,22 @@ class TTN:
         else:
             return False
         
+    def make_move(self, x:int, y:int, marker:str) -> bool:
+        if self.board[y][x] == " ":
+            self.board[y][x] = marker
+            return True
+        elif "N" in self.board[y][x]:
+            if marker  not in self.board[y][x]:
+                self.board[y][x] += marker
+                return True
+        else:
+            return False
+        
     def check_stalemate(self) -> bool:
         if all(cell != " " for row in self.board for cell in row):
             return True
-        else: return False
+        else: 
+            return False
     
     def check_win(self) -> tuple:
         #filter the board
