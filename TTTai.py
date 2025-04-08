@@ -190,3 +190,8 @@ class TTTai:
                             best_move = (j, i) 
         
         return best_move
+    
+    #TODO try hardcoding a TTT ai, shouldn't be that hard, 
+    # 3 intial cases, and the rest is winning, blocking, 
+    # then placing where is just 1 of yours, 
+    # or just playing in a random place
