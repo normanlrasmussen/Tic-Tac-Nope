@@ -1,6 +1,4 @@
-#This will be the base class for playing Tic-Tac-Toe
-
-import MMai
+import TTTai
 
 class TTT:
     def __init__(self):
@@ -57,7 +55,7 @@ class TTT:
                 return
         
     def ai_game(self) -> None:
-        ai = MMai.MMai()
+        ai = TTTai.TTTai(ai_type=2)
         moves_so_far = []
         incoming = None
         while incoming not in ("y", "n"):
@@ -75,7 +73,7 @@ class TTT:
             ai_marker = "X"
 
         while True:
-            x, y = ai.ai_move(moves_so_far, 2, self.board)
+            x, y = ai.ai_move(moves_so_far, self.board)
             print(f"AI will go ({x},{y})...")
             self.board[y][x] = ai_marker
             moves_so_far.append([x,y])
