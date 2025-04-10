@@ -92,6 +92,8 @@ class TTTai:
             return self.average_win(completed_moves)
         elif self.type == 2:
             return self.minimax_move(board)
+        elif self.type == 3:
+            return self.cases_move(board)
 
     def average_win(self, completed_moves:list) -> tuple:
         #NOTE this is not a full proof model
@@ -190,6 +192,62 @@ class TTTai:
                             best_move = (j, i) 
         
         return best_move
+    
+    def cases_move(self, game:str) -> tuple:
+        
+        game = game.copy()
+        count_X = sum(cell == "X" for row in game for cell in row)
+        count_O = sum(cell == "O" for row in game for cell in row)
+        current_marker = "X" if count_X == count_O else "O"
+        opponent_marker = "O" if count_X == count_O else "X"
+
+        #Step 1: Win
+        for x in range(3):
+            for y in range(3):
+                if game[y][x] == " ":
+                    
+                    game[y][x] = current_marker
+                    terminal, _ = self.check_win(game)
+                    if terminal == True:
+                        return x, y
+                    
+                    game[y][x] == " " #Back Track
+
+        #Step 2: Block
+        for x in range(3):
+            for y in range(3):
+                if game[y][x] == " ":
+                    
+                    game[y][x] = opponent_marker
+                    terminal, _ = self.check_win(game)
+                    if terminal == True:
+                        return x, y
+                    
+                    game[y][x] == " " #Back Track
+
+        #Step 3: Play Corner with only piece in it
+        if game[0][0]:
+            pass
+
+        #Step 4: Play 2 in a line
+        for y in range(3):
+            if sum(cell == current_marker for cell in game[y]) == 1 and sum(cell == " " for cell in game[y]) == 1:
+                pass
+
+        #Step 5: If first move play corner
+        if count_X == 0:
+            return 0, 0
+
+        #Step 6: If second move play center
+        if count_O == 0:
+            return 0, 0
+
+        #Step 7: Play any space
+        for x in range(3):
+            for y in range(3):
+                if game[y][x] == " ":
+                    return x, y
+
     
     #TODO try hardcoding a TTT ai, shouldn't be that hard, 
     # 3 intial cases, and the rest is winning, blocking, 

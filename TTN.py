@@ -1,5 +1,6 @@
 #This is where I want to start building the tic-tac-nope class
 
+from copy import deepcopy
 class TTN:
     def __init__(self, empty_token_list = None):
         self.board = [[" ", " ", " "] for _ in range(3)]
@@ -13,7 +14,7 @@ class TTN:
             self.board[y][x] = "N"
         
     def __str__(self):
-        hidden_board = self.board.copy()
+        hidden_board = deepcopy(self.board)
         for x in range(3):
             for y in range(3):
                 if hidden_board[y][x][0] == "N":
@@ -21,13 +22,24 @@ class TTN:
         board_str = "\n".join([" | ".join(row) for row in hidden_board])
         return board_str.replace("\n", "\n" + "-" * 9 + "\n") 
     
+    def print_board(self) -> None:
+        hidden_board = deepcopy(self.board)
+        for x in range(3):
+            for y in range(3):
+                if hidden_board[y][x][0] == "N":
+                    hidden_board[y][x] = self.empty_token
+        board_str = "\n".join([" | ".join(row) for row in hidden_board])
+        print(board_str.replace("\n", "\n" + "-" * 9 + "\n"))
+        print("\n")
+        return    
+    
     def can_move(self, x:int, y:int, marker:str) -> bool:
         if self.board[y][x] == " ":
             return True
         elif "N" in self.board[y][x]:
             if marker == "X" and "X" not in self.board[y][x]:
                 return True
-            elif marker == "Y" and "Y" not in self.board[y][x]:
+            elif marker == "O" and "O" not in self.board[y][x]:
                 return True
         else:
             return False
@@ -51,10 +63,10 @@ class TTN:
     
     def check_win(self) -> tuple:
         #filter the board
-        filtered_board = self.board.copy()
+        filtered_board = deepcopy(self.board)
         for x in range(3):
             for y in range(3):
-                if "N" in filtered_board[y][x]:
+                if "N" in filtered_board[y][x] and len(filtered_board[y][x]) != 1:
                     filtered_board[y][x] = filtered_board[y][x][1]
         
         #Check rows
@@ -75,14 +87,7 @@ class TTN:
         
         #If no conditions are met return false
         return False, None
-
-        
-
-
-#----------------Past this line is code I havn't look at yest----------------
     
-    
-    #NOTE When you want to add bot, create the branch here
     def begin_game(self, humans=False):
         #Give cordinate instructions
         instructions = [[str((x, y)) for x in range(3)] for y in range(3)]
@@ -92,7 +97,6 @@ class TTN:
         
         #Begin the Game
         print("\n So let the game begin! \n")
-        self.board = [[" ", " ", " "] for _ in range(3)]
         self.print_board()
 
         #Begin the game with the person
@@ -100,7 +104,7 @@ class TTN:
             self.human_game()
         else: 
             self.ai_game()
-
+    
     def human_game(self) -> None:
         """
         This function will run a game between 2 people
@@ -127,6 +131,45 @@ class TTN:
             if self.check_win() == True:
                 print("Player 'O' wins :)")
                 return
+
+    def human_move(self, marker:str, return_move = False):
+        """
+        Asks for an input and makes a move
+        """
+        while True:
+            possible_inputs = ("0", "1", "2")
+            x = input("Choose a Column (0-2): ")
+            y = input("Choose a Row (0-2): ")
+            if x in possible_inputs and y in possible_inputs:
+                x = int(x)
+                y = int(y)
+            else:
+                print("Invalid input. Row and Column must be between 0 and 2.")
+                continue  
+            
+            if not (0 <= x < 3 and 0 <= y < 3):  
+                print("Invalid input. Row and Column must be between 0 and 2.")
+                continue  
+
+            if not self.can_move(x, y, marker):  
+                print("That spot is already taken. Try again.")
+                continue  
+
+            self.make_move(x, y, marker)
+            break
+        
+        if return_move == True:
+            return x,y
+        else:
+            return  
+
+
+#----------------Past this line is code I havn't look at yest----------------
+    
+    
+    
+
+    
         
     def ai_game(self) -> None:
         ai = None
@@ -175,45 +218,9 @@ class TTN:
 
 
 
-    def human_move(self, marker:str, return_move = False):
-        """
-        Asks for an input and makes a move
-        """
-        while True:
-            possible_inputs = ("0", "1", "2")
-            x = input("Choose a Column (0-2): ")
-            y = input("Choose a Row (0-2): ")
-            if x in possible_inputs and y in possible_inputs:
-                x = int(x)
-                y = int(y)
-            else:
-                print("Invalid input. Row and Column must be between 0 and 2.")
-                continue  
+    
             
-            if not (0 <= x < 3 and 0 <= y < 3):  
-                print("Invalid input. Row and Column must be between 0 and 2.")
-                continue  
-
-            if not self.can_move(x, y):  
-                print("That spot is already taken. Try again.")
-                continue  
-
-            self.board[y][x] = marker
-            break
-        
-        if return_move == True:
-            return x,y
-        else:
-            return  
-            
-    def print_board(self) -> None:
-        """
-        Prints the board on the IDE
-        """
-        board_str = "\n".join([" | ".join(row) for row in self.board])
-        print(board_str.replace("\n", "\n" + "-" * 9 + "\n"))
-        print("\n")
-        return
+    
 
     
     
