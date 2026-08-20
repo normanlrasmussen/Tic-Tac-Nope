@@ -1,0 +1,7 @@
+This is Tic-tac-toe with a twist.
+2 Players take turns chosing tiles for X and O. 
+Same rules apply for winning. 
+However the twist is that there are unknown tiles. 
+Each player can only play in these tiles once. 
+The first, player to play in one of these tiles gets. 
+So if P1 plays in the hidden middle, and then P2 does it will only count for P1's place
