@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Play Tic-Tac-Nope against an information-set AI and explore the uncertainty behind every move." />
-  <meta name="theme-color" content="#0b1020" />
+  <meta name="description" content="Play Tic-Tac-Nope against an information-set AI and inspect every possible state and move value." />
+  <meta name="theme-color" content="#f7f3ea" />
   <title>Tic-Tac-Nope</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
@@ -26,109 +26,74 @@
       <section id="page-play" class="page active" aria-labelledby="play-title">
         <div class="hero-row">
           <div>
-            <p class="eyebrow">IMPERFECT INFORMATION · PERFECTLY SIMPLE BOARD</p>
+            <p class="eyebrow">IMPERFECT INFORMATION · ONE ACTION ACROSS MANY WORLDS</p>
             <h1 id="play-title">You can see the board.<br><span>You cannot see the truth.</span></h1>
-            <p class="lede">Mystery cells hide moves from the other player. Pick your fog, choose an AI, and play one action at a time from incomplete information.</p>
+            <p class="lede">Mystery cells hide moves from the other player. Pick your fog, choose an AI, then watch your information set evolve move by move.</p>
           </div>
-          <div class="hero-chip" aria-hidden="true">
-            <div class="mini-grid"><i>O</i><i>?</i><i></i><i></i><i>X</i><i></i><i>?</i><i></i><i>O</i></div>
-          </div>
+          <div class="hero-chip" aria-hidden="true"><div class="mini-grid"><i>O</i><i>?</i><i></i><i></i><i>X</i><i></i><i>?</i><i></i><i>O</i></div></div>
         </div>
 
         <div class="play-layout">
           <aside class="panel setup-panel">
-            <div class="panel-heading">
-              <div><p class="kicker">MATCH SETUP</p><h2>Shape the uncertainty</h2></div>
-              <span id="hidden-count-badge" class="pill">2 hidden</span>
-            </div>
-
+            <div class="panel-heading"><div><p class="kicker">MATCH SETUP</p><h2>Shape the uncertainty</h2></div><span id="hidden-count-badge" class="pill">2 hidden</span></div>
             <label class="field-label" for="ai-mode">Opponent</label>
             <div class="segmented" id="ai-mode" role="group" aria-label="AI opponent mode">
-              <button class="segment active" data-ai="optimal"><strong>Optimal</strong><small>always takes the top action</small></button>
-              <button class="segment" data-ai="probs"><strong>Probs</strong><small>weighted toward better actions</small></button>
+              <button class="segment active" data-ai="optimal"><strong>Optimal</strong><small>best current belief action</small></button>
+              <button class="segment" data-ai="probs"><strong>Probs</strong><small>samples normalized action quality</small></button>
             </div>
-
             <div class="field-label row-label"><span>Possible hidden tiles</span><small>choose at least 2</small></div>
             <div id="hidden-picker" class="hidden-picker" aria-label="Choose hidden cells"></div>
             <p id="setup-note" class="setup-note">The locations are known. Moves made inside them are private.</p>
-
             <button id="new-game" class="primary-btn">Start new game</button>
           </aside>
 
           <section class="panel board-panel">
-            <div class="game-status-row">
-              <div>
-                <p class="kicker">LIVE MATCH</p>
-                <h2 id="status-title">Your turn · O</h2>
-                <p id="status-detail">Pick any open square or make a blind attempt in the fog.</p>
-              </div>
-              <div class="turn-token"><span id="turn-symbol">O</span><small>turn</small></div>
-            </div>
-
-            <div class="board-wrap">
-              <div id="board" class="board" role="grid" aria-label="Tic-Tac-Nope board"></div>
-              <div id="thinking" class="thinking" hidden><span></span><span></span><span></span> AI is reading its information set</div>
-            </div>
-
-            <div class="legend">
-              <span><i class="dot you"></i>You are O</span>
-              <span><i class="dot ai"></i>AI is X</span>
-              <span><i class="dot fog"></i>Mystery cell</span>
-            </div>
-
+            <div class="game-status-row"><div><p class="kicker">LIVE MATCH</p><h2 id="status-title">Your turn · O</h2><p id="status-detail">Pick any open square or make a blind attempt in the fog.</p></div><div class="turn-token"><span id="turn-symbol">O</span><small>turn</small></div></div>
+            <div class="board-wrap"><div id="board" class="board" role="grid" aria-label="Tic-Tac-Nope board"></div><div id="thinking" class="thinking" hidden><span></span><span></span><span></span> AI is reading its information set</div></div>
+            <div class="legend"><span><i class="dot you"></i>You are O</span><span><i class="dot ai"></i>AI is X</span><span><i class="dot fog"></i>Mystery cell</span></div>
             <div id="move-message" class="move-message" aria-live="polite">Game ready.</div>
           </section>
 
           <aside class="panel insight-panel">
-            <div class="panel-heading">
-              <div><p class="kicker">INFORMATION EDGE</p><h2>What you know</h2></div>
-              <button class="ghost-btn" data-page="stats">Open lab</button>
-            </div>
+            <div class="panel-heading"><div><p class="kicker">INFORMATION EDGE</p><h2>What you know</h2></div><button class="ghost-btn" data-page="stats">Open lab</button></div>
             <div class="metric-stack">
-              <div class="metric"><span>Possible worlds</span><strong id="live-worlds">1</strong><small id="live-worlds-detail">no ambiguity yet</small></div>
+              <div class="metric"><span>Possible worlds</span><strong id="live-worlds">1</strong><small id="live-worlds-detail">one world fits what you know</small></div>
               <div class="metric"><span>Information entropy</span><strong id="live-entropy">0.00 bits</strong><small>log₂ of your possible worlds</small></div>
-              <div class="metric"><span>Recommended move</span><strong id="live-best">—</strong><small id="live-best-detail">based on equal-weight beliefs</small></div>
+              <div class="metric"><span>Recommended move</span><strong id="live-best">—</strong><small id="live-best-detail">equal-weight belief score</small></div>
             </div>
-            <div class="mini-forecast">
-              <div class="forecast-title"><span>State forecast</span><small>perfect-info continuation</small></div>
-              <div id="forecast-bars" class="forecast-bars"></div>
-            </div>
+            <div class="mini-forecast"><div class="forecast-title"><span>Belief confidence</span><small>state fraction, not calibrated odds</small></div><div id="forecast-bars" class="forecast-bars"></div></div>
           </aside>
         </div>
+
+        <section class="panel play-analysis-panel">
+          <div class="panel-heading"><div><p class="kicker">INFORMATION-STATE VIEW</p><h2>Every world you consider possible — and every move value inside it</h2></div><span id="play-world-prob" class="pill">100% each</span></div>
+          <p class="muted">Each card is one board in your information set. The small 3×3 value map underneath scores the same move if that world were the true one. The aggregate recommendation above averages each move across all cards.</p>
+          <div id="play-info-states" class="info-state-grid"></div>
+        </section>
+
+        <section class="panel timeline-panel">
+          <div class="panel-heading"><div><p class="kicker">CONFIDENCE TIMELINE</p><h2>How your win / draw / loss belief changes</h2></div><span class="pill">green win · gold draw · red loss</span></div>
+          <p class="muted">Confidence is the fraction of equally weighted possible worlds classified as win/draw/loss by the continuation evaluator. It is a belief summary, not a calibrated probability forecast.</p>
+          <div id="confidence-timeline" class="confidence-timeline"></div>
+          <div id="truth-reveal" class="truth-reveal" hidden></div>
+        </section>
       </section>
 
       <section id="page-stats" class="page" aria-labelledby="stats-title">
-        <div class="page-head">
-          <div><p class="eyebrow">THE UNCERTAINTY LAB</p><h1 id="stats-title">See the game tree breathe.</h1><p class="lede">Every mini-board is a world still consistent with what you have observed. They are treated as equally likely.</p></div>
-          <button class="secondary-btn" data-page="play">Back to game</button>
-        </div>
-
+        <div class="page-head"><div><p class="eyebrow">THE UNCERTAINTY LAB</p><h1 id="stats-title">See the game tree breathe.</h1><p class="lede">Every mini-board is a world still consistent with what you observed. Distinct states are treated as equally likely.</p></div><button class="secondary-btn" data-page="play">Back to game</button></div>
         <div class="stats-grid">
           <article class="panel stat-hero"><p class="kicker">SESSION RECORD</p><div class="record"><strong id="record-total">0</strong><span>games</span></div><div id="record-bars" class="record-bars"></div></article>
           <article class="panel"><p class="kicker">CURRENT BELIEF SET</p><div class="big-number" id="stats-worlds">1</div><p class="muted">equally weighted possible boards from your perspective</p><div class="entropy-line"><span>Entropy</span><strong id="stats-entropy">0.00 bits</strong></div></article>
-          <article class="panel"><p class="kicker">FOG PRESSURE</p><div id="fog-pressure" class="fog-pressure"></div><p class="muted">Cell shading summarizes ownership probability across your possible worlds.</p></article>
+          <article class="panel"><p class="kicker">FOG PRESSURE</p><div id="fog-pressure" class="fog-pressure"></div><p class="muted">Ownership frequency across your current possible worlds.</p></article>
         </div>
-
         <div class="analysis-layout">
-          <article class="panel action-panel">
-            <div class="panel-heading"><div><p class="kicker">ACTION SPECTRUM</p><h2>Your move values</h2></div><span class="pill">−1 loss · +1 win</span></div>
-            <div id="action-spectrum" class="action-spectrum"></div>
-            <p class="muted">Each action is applied to every world you consider possible, then averaged. Future value uses a perfect-information continuation approximation.</p>
-          </article>
-
-          <article class="panel worlds-panel">
-            <div class="panel-heading"><div><p class="kicker">POSSIBLE WORLDS</p><h2>Boards behind the fog</h2></div><span id="world-prob" class="pill">100% each</span></div>
-            <div id="possible-worlds" class="possible-worlds"></div>
-          </article>
+          <article class="panel action-panel"><div class="panel-heading"><div><p class="kicker">ACTION SPECTRUM</p><h2>Your aggregate move values</h2></div><span class="pill">−1 loss · +1 win</span></div><div id="action-spectrum" class="action-spectrum"></div><p class="muted">Current action selection is Bayesian over equal-weight beliefs. The continuation still uses a perfect-information approximation.</p></article>
+          <article class="panel worlds-panel"><div class="panel-heading"><div><p class="kicker">POSSIBLE WORLDS</p><h2>Boards behind the fog</h2></div><span id="world-prob" class="pill">100% each</span></div><div id="possible-worlds" class="possible-worlds"></div></article>
         </div>
       </section>
 
       <section id="page-rules" class="page" aria-labelledby="rules-title">
-        <div class="page-head">
-          <div><p class="eyebrow">RULES OF THE FOG</p><h1 id="rules-title">Tic-tac-toe, except knowledge is a resource.</h1><p class="lede">Three in a row still wins. The twist is what each player is allowed to know.</p></div>
-          <button class="secondary-btn" data-page="play">Play now</button>
-        </div>
-
+        <div class="page-head"><div><p class="eyebrow">RULES OF THE FOG</p><h1 id="rules-title">Tic-tac-toe, except knowledge is a resource.</h1><p class="lede">Three in a row still wins. The twist is what each player is allowed to know.</p></div><button class="secondary-btn" data-page="play">Play now</button></div>
         <div class="rules-flow">
           <article class="rule-card"><span>01</span><h2>Choose the mystery cells</h2><p>Before the match, select at least two cells to live inside the fog. Both players know which locations are mysterious.</p></article>
           <article class="rule-card"><span>02</span><h2>Visible moves are public</h2><p>Play on a normal cell and both players see the mark. It behaves exactly like ordinary tic-tac-toe.</p></article>
@@ -137,16 +102,9 @@
           <article class="rule-card"><span>05</span><h2>No repeated probing</h2><p>Each player may attempt a particular mystery cell only once. Your own previous attempts are marked for you.</p></article>
           <article class="rule-card"><span>06</span><h2>Three in a row wins</h2><p>The real underlying board decides the result. Hidden ownership counts toward a line even when the other player cannot see it.</p></article>
         </div>
-
-        <article class="panel theory-card">
-          <div><p class="kicker">WHY THE AI IS INTERESTING</p><h2>One action for an entire information set.</h2></div>
-          <p>When the AI cannot distinguish several possible boards, it is not allowed to choose a different move for each one. It scores the same candidate action across every board it believes possible, assumes those boards are equally likely, and averages the continuation value.</p>
-          <div class="formula">Q(I, a) = 1 / |I| · Σ V(T(s, a))</div>
-          <p><strong>Optimal</strong> chooses the action with the highest Q value. <strong>Probs</strong> turns those same scores into positive weights, normalizes them, and samples—so strong moves are more likely without becoming deterministic.</p>
-        </article>
+        <article class="panel theory-card"><div><p class="kicker">WHAT “OPTIMAL” MEANS HERE</p><h2>One current action for an entire information set.</h2></div><p>The solver applies the same candidate move to every state the acting player considers possible, treats those states as equally likely, and averages their continuation values.</p><div class="formula">Q(I, a) = 1 / |I| · Σ V(T(s, a))</div><p><strong>Important:</strong> because the solver does not know the opponent’s private information set, future value currently uses perfect-information minimax as an approximation. So “Optimal” means optimal under this current-action belief model, not a proven extensive-form equilibrium.</p></article>
       </section>
     </main>
-
     <footer><span>Tic-Tac-Nope</span><span>Built around information sets, not omniscience.</span></footer>
   </div>
   <script type="module" src="./app.js"></script>
