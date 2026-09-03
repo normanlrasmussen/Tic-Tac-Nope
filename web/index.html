@@ -3,113 +3,85 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Play Tic-Tac-Nope against an information-set AI and inspect every possible state and move value." />
+  <meta name="description" content="Tic-Tac-Nope: play and simulate imperfect-information strategies including belief search, mixed policies, robust control, Thompson sampling, and MCCFR equilibrium play." />
   <meta name="theme-color" content="#f7f3ea" />
-  <title>Tic-Tac-Nope</title>
+  <title>Tic-Tac-Nope · Computational Game Theory Lab</title>
   <link rel="stylesheet" href="./styles.css" />
   <link rel="stylesheet" href="./theme2.css" />
   <link rel="stylesheet" href="./theme3.css" />
+  <link rel="stylesheet" href="./game-theory.css" />
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
-      <button class="brand" data-page="play" aria-label="Tic-Tac-Nope home">
-        <span class="brand-mark" aria-hidden="true">?</span>
-        <span><strong>Tic-Tac-Nope</strong><small>tic-tac-toe under uncertainty</small></span>
-      </button>
-      <nav class="nav" aria-label="Main navigation">
-        <button class="nav-btn active" data-page="play">Play</button>
-        <button class="nav-btn" data-page="stats">Analysis</button>
-        <button class="nav-btn" data-page="rules">Rules</button>
-      </nav>
+      <button class="brand" data-page="play" aria-label="Tic-Tac-Nope home"><span class="brand-mark" aria-hidden="true">?</span><span><strong>Tic-Tac-Nope</strong><small>computational game theory lab</small></span></button>
+      <nav class="nav" aria-label="Main navigation"><button class="nav-btn active" data-page="play">Play</button><button class="nav-btn" data-page="analysis">Analysis</button><button class="nav-btn" data-page="strategies">Strategies</button><button class="nav-btn" data-page="simulate">Simulation</button><button class="nav-btn" data-page="rules">Rules</button></nav>
     </header>
 
     <main>
       <section id="page-play" class="page active" aria-labelledby="play-title">
-        <div class="hero-row">
-          <div>
-            <p class="eyebrow">IMPERFECT INFORMATION · ONE ACTION ACROSS MANY WORLDS</p>
-            <h1 id="play-title">You can see the board.<br><span>You cannot see the truth.</span></h1>
-            <p class="lede">Mystery cells hide moves from the other player. Pick your fog, choose an AI, then watch your information set evolve move by move.</p>
-          </div>
-          <div class="hero-chip" aria-hidden="true"><div class="mini-grid"><i>O</i><i>?</i><i></i><i></i><i>X</i><i></i><i>?</i><i></i><i>O</i></div></div>
-        </div>
+        <div class="hero-row"><div><p class="eyebrow">EXTENSIVE FORM · IMPERFECT INFORMATION · MIXED STRATEGIES</p><h1 id="play-title">The board is small.<br><span>The strategy space is not.</span></h1><p class="lede">Choose how the opponent reasons: deterministic belief search, heuristic mixing, robust control, posterior sampling, or an approximate equilibrium behavioral strategy learned on the full extensive-form game.</p></div><div class="hero-chip" aria-hidden="true"><div class="mini-grid"><i>O</i><i>?</i><i></i><i></i><i>X</i><i></i><i>?</i><i></i><i>O</i></div></div></div>
 
-        <div class="play-layout">
+        <div class="play-layout theory-play-layout">
           <aside class="panel setup-panel">
-            <div class="panel-heading"><div><p class="kicker">MATCH SETUP</p><h2>Shape the uncertainty</h2></div><span id="hidden-count-badge" class="pill">2 hidden</span></div>
-            <label class="field-label" for="ai-mode">Opponent</label>
-            <div class="segmented" id="ai-mode" role="group" aria-label="AI opponent mode">
-              <button class="segment active" data-ai="optimal"><strong>Optimal</strong><small>best current belief action</small></button>
-              <button class="segment" data-ai="probs"><strong>Probs</strong><small>samples normalized action quality</small></button>
-            </div>
-            <div class="field-label row-label"><span>Possible hidden tiles</span><small>choose at least 2</small></div>
-            <div id="hidden-picker" class="hidden-picker" aria-label="Choose hidden cells"></div>
-            <p id="setup-note" class="setup-note">The locations are known. Moves made inside them are private.</p>
-            <button id="new-game" class="primary-btn">Start new game</button>
+            <div class="panel-heading"><div><p class="kicker">MATCH SETUP</p><h2>Choose the opponent</h2></div><span id="hidden-count-badge" class="pill">2 hidden</span></div>
+            <label class="field-label" for="ai-strategy">Opponent strategy</label><select id="ai-strategy" class="strategy-select"></select><div id="strategy-quick" class="strategy-quick"></div>
+            <div class="field-label row-label"><span>Turn order</span><small>you are O</small></div><div id="turn-order" class="segmented order-segmented" role="group" aria-label="Choose turn order"><button class="segment active" data-order="first"><strong>First</strong><small>You open</small></button><button class="segment" data-order="second"><strong>Second</strong><small>AI opens</small></button></div>
+            <div class="field-label row-label"><span>Mystery cells</span><small>choose at least 2</small></div><div id="hidden-picker" class="hidden-picker" aria-label="Choose mystery cells"></div><p id="setup-note" class="setup-note">Both players know the mystery locations. The specific fog action is private.</p><button id="new-game" class="primary-btn">Start new game</button>
           </aside>
 
           <section class="panel board-panel">
-            <div class="game-status-row"><div><p class="kicker">LIVE MATCH</p><h2 id="status-title">Your turn · O</h2><p id="status-detail">Pick any open square or make a blind attempt in the fog.</p></div><div class="turn-token"><span id="turn-symbol">O</span><small>turn</small></div></div>
-            <div class="board-wrap"><div id="board" class="board" role="grid" aria-label="Tic-Tac-Nope board"></div><div id="thinking" class="thinking" hidden><span></span><span></span><span></span> AI is reading its information set</div></div>
-            <div class="legend"><span><i class="dot you"></i>You are O</span><span><i class="dot ai"></i>AI is X</span><span><i class="dot fog"></i>Mystery cell</span></div>
-            <div id="move-message" class="move-message" aria-live="polite">Game ready.</div>
+            <div class="game-status-row"><div><p class="kicker">LIVE MATCH</p><h2 id="status-title">Your turn · O</h2><p id="status-detail">Choose one action using only what you know.</p></div><div class="turn-token"><span id="turn-symbol">O</span><small>turn</small></div></div>
+            <div class="board-wrap"><div id="board" class="board" role="grid" aria-label="Tic-Tac-Nope board"></div><div id="thinking" class="thinking" hidden><span></span><span></span><span></span> AI is evaluating its strategy</div></div>
+            <div class="legend"><span><i class="dot you"></i>You are O</span><span><i class="dot ai"></i>AI is X</span><span><i class="dot fog"></i>Mystery cell</span></div><div id="move-message" class="move-message" aria-live="polite">Game ready.</div>
           </section>
 
           <aside class="panel insight-panel">
-            <div class="panel-heading"><div><p class="kicker">INFORMATION EDGE</p><h2>What you know</h2></div><button class="ghost-btn" data-page="stats">Open lab</button></div>
-            <div class="metric-stack">
-              <div class="metric"><span>Possible worlds</span><strong id="live-worlds">1</strong><small id="live-worlds-detail">one world fits what you know</small></div>
-              <div class="metric"><span>Information entropy</span><strong id="live-entropy">0.00 bits</strong><small>log₂ of your possible worlds</small></div>
-              <div class="metric"><span>Recommended move</span><strong id="live-best">—</strong><small id="live-best-detail">equal-weight belief score</small></div>
-            </div>
-            <div class="mini-forecast"><div class="forecast-title"><span>Belief confidence</span><small>state fraction, not calibrated odds</small></div><div id="forecast-bars" class="forecast-bars"></div></div>
+            <div class="panel-heading"><div><p class="kicker">LIVE INFORMATION SET</p><h2>What your observations imply</h2></div><button class="ghost-btn" data-page="analysis">Open lab</button></div>
+            <div class="metric-stack"><div class="metric"><span>Possible histories</span><strong id="live-worlds">1</strong><small>histories consistent with your observations</small></div><div class="metric"><span>Information entropy</span><strong id="live-entropy">0.00 bits</strong><small>log₂ of the equal-weight possibility set</small></div><div class="metric"><span>Belief-search move</span><strong id="live-best">—</strong><small id="live-best-detail">one-step belief value + exact oracle continuation</small></div></div>
+            <div class="equilibrium-mini"><div><span>Equilibrium training</span><strong id="live-cfr-iters">0</strong><small>MCCFR iterations for this game configuration</small></div><div id="live-equilibrium-policy" class="policy-mini"></div></div>
           </aside>
         </div>
 
-        <section class="panel play-analysis-panel">
-          <div class="panel-heading"><div><p class="kicker">INFORMATION-STATE VIEW</p><h2>Every world you consider possible — and every move value inside it</h2></div><span id="play-world-prob" class="pill">100% each</span></div>
-          <p class="muted">Each card is one information state. The small 3×3 map underneath scores the same move in that state. The aggregate recommendation above averages each move across all cards.</p>
-          <div id="play-info-states" class="info-state-grid"></div>
-        </section>
+        <section class="panel combined-map-panel"><div class="panel-heading"><div><p class="kicker">COMBINED DECISION MAP</p><h2>Belief-search value of every legal action</h2></div><span class="pill">−1 loss · +1 win</span></div><p class="muted">For each action, the baseline solver averages the exact perfect-information continuation value over every history you currently consider possible. This is a decision heuristic, not the equilibrium policy.</p><div id="combined-value-map" class="combined-value-map" aria-label="Combined action values"></div></section>
 
-        <section class="panel timeline-panel">
-          <div class="panel-heading"><div><p class="kicker">CONFIDENCE TIMELINE</p><h2>How your win / draw / loss belief changes</h2></div><span class="pill">green win · gold draw · red loss</span></div>
-          <p class="muted">Confidence is the fraction of equally weighted possible states classified as win/draw/loss by the continuation evaluator. It is a belief summary, not a calibrated probability forecast.</p>
-          <div id="confidence-timeline" class="confidence-timeline"></div>
-          <div id="truth-reveal" class="truth-reveal" hidden></div>
-        </section>
+        <section class="panel play-analysis-panel"><div class="panel-heading"><div><p class="kicker">INFORMATION-STATE VIEW</p><h2>Possible histories behind your current observation</h2></div><span id="play-world-prob" class="pill">100% each</span></div><p class="muted">The possibility model is strategy-free and preserves private attempted-cell histories. Equal weighting here is intentionally a heuristic visualization; equilibrium reach probabilities live in the MCCFR policy instead.</p><div id="play-info-states" class="info-state-grid"></div></section>
+
+        <section class="panel timeline-panel"><div class="panel-heading"><div><p class="kicker">MATCH TIMELINE</p><h2>Information growth and revealed truth</h2></div><span class="pill">observations, not omniscience</span></div><div id="confidence-timeline" class="confidence-timeline"></div><div id="truth-reveal" class="truth-reveal" hidden></div></section>
       </section>
 
-      <section id="page-stats" class="page" aria-labelledby="stats-title">
-        <div class="page-head"><div><p class="eyebrow">THE UNCERTAINTY LAB</p><h1 id="stats-title">See the game tree breathe.</h1><p class="lede">Every mini-board is a state still consistent with what you observed. Distinct information states are treated as equally likely.</p></div><button class="secondary-btn" data-page="play">Back to game</button></div>
-        <div class="stats-grid">
-          <article class="panel stat-hero"><p class="kicker">SESSION RECORD</p><div class="record"><strong id="record-total">0</strong><span>games</span></div><div id="record-bars" class="record-bars"></div></article>
-          <article class="panel"><p class="kicker">CURRENT BELIEF SET</p><div class="big-number" id="stats-worlds">1</div><p class="muted">equally weighted information states from your perspective</p><div class="entropy-line"><span>Entropy</span><strong id="stats-entropy">0.00 bits</strong></div></article>
-          <article class="panel"><p class="kicker">FOG PRESSURE</p><div id="fog-pressure" class="fog-pressure"></div><p class="muted">Ownership frequency across your current possible states.</p></article>
-        </div>
-        <div class="analysis-layout">
-          <article class="panel action-panel"><div class="panel-heading"><div><p class="kicker">ACTION SPECTRUM</p><h2>Your aggregate move values</h2></div><span class="pill">−1 loss · +1 win</span></div><div id="action-spectrum" class="action-spectrum"></div><p class="muted">Current action selection is Bayesian over equal-weight states. The continuation still uses a perfect-information approximation.</p></article>
-          <article class="panel worlds-panel"><div class="panel-heading"><div><p class="kicker">POSSIBLE WORLDS</p><h2>Boards behind the fog</h2></div><span id="world-prob" class="pill">100% each</span></div><div id="possible-worlds" class="possible-worlds"></div></article>
-        </div>
+      <section id="page-analysis" class="page" aria-labelledby="analysis-title">
+        <div class="page-head"><div><p class="eyebrow">THE UNCERTAINTY LAB</p><h1 id="analysis-title">Inspect the information set and the policies.</h1><p class="lede">Compare the equal-weight belief heuristic to the learned behavioral strategy at the exact information set reached in play.</p></div><button class="secondary-btn" data-page="play">Back to game</button></div>
+        <div class="stats-grid"><article class="panel"><p class="kicker">CURRENT POSSIBILITY SET</p><div class="big-number" id="analysis-worlds">1</div><p class="muted">distinct full histories consistent with your observations</p></article><article class="panel"><p class="kicker">EQUILIBRIUM TABLE</p><div class="big-number" id="analysis-infosets">0</div><p class="muted">information sets visited by MCCFR</p></article><article class="panel"><p class="kicker">TRAINING ITERATIONS</p><div class="big-number" id="analysis-iters">0</div><button id="train-more" class="secondary-btn compact">Train +10,000</button></article></div>
+        <div class="analysis-layout"><article class="panel action-panel"><div class="panel-heading"><div><p class="kicker">BELIEF HEURISTIC</p><h2>Mean / worst / best continuation value</h2></div></div><div id="analysis-action-table" class="strategy-table"></div></article><article class="panel action-panel"><div class="panel-heading"><div><p class="kicker">MCCFR BEHAVIOR POLICY</p><h2>Average strategy at this information set</h2></div></div><div id="analysis-policy" class="strategy-table"></div><p class="muted">A finite MCCFR run is an approximation. The theoretical guarantee is asymptotic convergence of the average strategy in two-player zero-sum perfect-recall games.</p></article></div>
+        <article class="panel"><div class="panel-heading"><div><p class="kicker">POSSIBLE HISTORIES</p><h2>Boards and private-attempt state</h2></div></div><div id="analysis-world-cards" class="possible-worlds"></div></article>
       </section>
 
-      <section id="page-rules" class="page" aria-labelledby="rules-title">
-        <div class="page-head"><div><p class="eyebrow">RULES OF THE FOG</p><h1 id="rules-title">Tic-tac-toe, except knowledge is a resource.</h1><p class="lede">Three in a row still wins. The twist is what each player is allowed to know.</p></div><button class="secondary-btn" data-page="play">Play now</button></div>
-        <div class="rules-flow">
-          <article class="rule-card"><span>01</span><h2>Choose the mystery cells</h2><p>Before the match, select at least two cells to live inside the fog. Both players know which locations are mysterious.</p></article>
-          <article class="rule-card"><span>02</span><h2>Visible moves are public</h2><p>Play on a normal cell and both players see the mark. It behaves exactly like ordinary tic-tac-toe.</p></article>
-          <article class="rule-card"><span>03</span><h2>Fog moves are private</h2><p>Attempt a mystery cell and the opponent only learns that you played somewhere in the fog—not which cell.</p></article>
-          <article class="rule-card"><span>04</span><h2>First claim wins the cell</h2><p>If the mystery cell is unclaimed, your mark owns it. If the opponent already claimed it, your attempt consumes the turn and the original mark remains.</p></article>
-          <article class="rule-card"><span>05</span><h2>No repeated probing</h2><p>Each player may attempt a particular mystery cell only once. Your own previous attempts are known to you.</p></article>
-          <article class="rule-card"><span>06</span><h2>Three in a row wins</h2><p>The real underlying board decides the result. Hidden ownership counts toward a line even when the other player cannot see it.</p></article>
-        </div>
-        <article class="panel theory-card"><div><p class="kicker">WHAT “OPTIMAL” MEANS HERE</p><h2>One current action for an entire information set.</h2></div><p>The solver applies the same candidate move to every state the acting player considers possible, treats those states as equally likely, and averages their continuation values.</p><div class="formula">Q(I, a) = 1 / |I| · Σ V(T(s, a))</div><p><strong>Important:</strong> because the solver does not know the opponent’s private information set, future value currently uses perfect-information minimax as an approximation. So “Optimal” means optimal under this current-action belief model, not a proven extensive-form equilibrium.</p></article>
+      <section id="page-strategies" class="page" aria-labelledby="strategies-title">
+        <div class="page-head"><div><p class="eyebrow">STRATEGY THEORY</p><h1 id="strategies-title">Seven legal playing styles, one oracle benchmark.</h1><p class="lede">Each strategy answers a different mathematical question. This page separates heuristics, robust decision rules, posterior-sampling ideas, and equilibrium computation so randomized play is not mislabeled as game-theoretic mixing.</p></div><button class="secondary-btn" data-page="play">Try them</button></div>
+
+        <article class="panel theory-core"><div><p class="kicker">THE EXTENSIVE-FORM MODEL</p><h2>The true node is hidden; the information set is what the player can distinguish.</h2></div><div class="efg-demo"><div class="efg-root">Opponent fog action</div><div class="efg-branches"><span>cell 2</span><span>cell 4</span><span>cell 7</span></div><div class="efg-infoset"><i></i><i></i><i></i><b>one information set</b></div><div class="efg-actions"><span>a₁</span><span>a₂</span><span>a₃</span></div></div><p>Each player's information key stores the complete sequence of public moves, observed opponent fog events, and that player's own fog choices and success/failure observations. Therefore a player never forgets an action or observation it previously knew: the implemented extensive form has <strong>perfect recall</strong>.</p><div class="formula">Iᵢ(h) = { histories h′ that generate the same observation history for player i }</div></article>
+
+        <div id="strategy-cards" class="strategy-grid"></div>
+
+        <article class="panel theory-core"><p class="kicker">WHY “MIXED” HAS TWO MEANINGS HERE</p><h2>Softmax randomness is not an equilibrium. MCCFR mixing is a behavioral strategy.</h2><div class="theory-columns"><div><h3>Heuristic mix</h3><div class="formula">σ(a|I) ∝ exp(β Q(I,a))</div><p>Softmax turns action scores into probabilities. It is useful for bounded-rational play and exploration, but the probabilities are not chosen to prevent exploitation by a strategic opponent.</p></div><div><h3>Equilibrium behavior</h3><div class="formula">σ̄ᵢ(a|I) ← average policy from MCCFR</div><p>Outcome-sampling MCCFR updates counterfactual regrets with importance weighting. In finite two-player zero-sum perfect-recall games, the time-averaged regret-minimizing strategy approaches a Nash equilibrium.</p></div></div></article>
+
+        <article class="panel theory-core"><p class="kicker">CORRECTNESS AUDIT</p><h2>What is exact, what is approximate, and what is only a benchmark.</h2><div class="audit-grid"><div><strong>Exact game transitions</strong><span>Hidden attempts remain legal after an opponent claim, failed attempts consume a turn, and terminal outcomes use the true board.</span></div><div><strong>Exact information legality</strong><span>The engine asserts that all histories sharing an information key expose the same legal action set.</span></div><div><strong>Exact zero-sum utility</strong><span>Terminal utility is +1 / 0 / −1 for the acting root player, with the opponent receiving the negation.</span></div><div><strong>Approximate equilibrium</strong><span>MCCFR is theoretically convergent, but any finite browser training run is an approximation and is labeled as such.</span></div><div><strong>Heuristic belief values</strong><span>Belief Search, Softmax, Robust, and Thompson use equal-weight possible histories and a perfect-information continuation oracle.</span></div><div><strong>Oracle is intentionally illegal</strong><span>The omniscient strategy sees the true hidden state and exists only as a simulation upper benchmark.</span></div></div></article>
+
+        <article class="panel sources-card"><p class="kicker">THEORETICAL REFERENCES</p><h2>Algorithms and equilibrium claims</h2><p><a href="https://papers.nips.cc/paper_files/paper/2007/hash/08d98638c6fcd194a4b1e6992063e944-Abstract.html" target="_blank" rel="noreferrer">Zinkevich, Johanson, Bowling & Piccione (2007), Counterfactual Regret Minimization</a></p><p><a href="https://papers.nips.cc/paper_files/paper/2009/hash/00411460f7c92d2124a67ea0f4cb5f85-Abstract.html" target="_blank" rel="noreferrer">Lanctot, Waugh, Zinkevich & Bowling (2009), Monte Carlo CFR</a></p><p><a href="https://github.com/google-deepmind/open_spiel/blob/master/open_spiel/python/algorithms/outcome_sampling_mccfr.py" target="_blank" rel="noreferrer">OpenSpiel reference outcome-sampling MCCFR implementation</a></p><p><a href="https://ocw.mit.edu/courses/14-16-strategy-and-information-spring-2016/resources/mit14_16s16_form_games/" target="_blank" rel="noreferrer">MIT extensive-form notes covering Kuhn's perfect-recall equivalence</a></p></article>
       </section>
+
+      <section id="page-simulate" class="page" aria-labelledby="simulate-title">
+        <div class="page-head"><div><p class="eyebrow">STRATEGY ARENA</p><h1 id="simulate-title">Make the algorithms play each other.</h1><p class="lede">Run controlled head-to-head experiments under the same fog configuration. Alternate the opening player to separate strategy quality from first-move advantage.</p></div><button class="secondary-btn" data-page="strategies">Read theory</button></div>
+        <div class="sim-layout"><aside class="panel sim-controls"><p class="kicker">MATCHUP</p><label class="field-label" for="sim-o">O strategy</label><select id="sim-o" class="strategy-select"></select><label class="field-label" for="sim-x">X strategy</label><select id="sim-x" class="strategy-select"></select><label class="field-label" for="sim-games">Games</label><input id="sim-games" class="sim-input" type="number" min="10" max="5000" step="10" value="250" /><label class="field-label" for="sim-start">Opening rule</label><select id="sim-start" class="strategy-select"><option value="alternate">Alternate opener</option><option value="o">O always opens</option><option value="x">X always opens</option></select><p class="setup-note">Simulation uses the mystery cells selected on the Play page. The Oracle benchmark is allowed here and is explicitly omniscient.</p><button id="run-sim" class="primary-btn">Run matchup</button><button id="run-round-robin" class="secondary-btn">Quick round robin</button></aside><section class="panel sim-results"><div class="panel-heading"><div><p class="kicker">RESULTS</p><h2 id="sim-title">Choose two strategies</h2></div><span id="sim-progress" class="pill">idle</span></div><div id="sim-metrics" class="sim-metrics"></div><div id="sim-bars" class="record-bars"></div><div id="sim-detail" class="sim-detail"></div></section></div>
+        <section class="panel round-robin-panel"><div class="panel-heading"><div><p class="kicker">ROUND ROBIN</p><h2>Cross-strategy score table</h2></div><span class="pill">O score = win + 0.5 draw</span></div><div id="round-robin" class="round-robin"></div></section>
+      </section>
+
+      <section id="page-rules" class="page" aria-labelledby="rules-title"><div class="page-head"><div><p class="eyebrow">RULES OF THE FOG</p><h1 id="rules-title">Tic-tac-toe where action history matters.</h1><p class="lede">The true board determines wins. Information determines decisions.</p></div><button class="secondary-btn" data-page="play">Play now</button></div><div class="rules-flow"><article class="rule-card"><span>01</span><h2>Choose mystery cells</h2><p>Before the match, select at least two fog cells. Both players know which locations are mysterious.</p></article><article class="rule-card"><span>02</span><h2>Visible moves are public</h2><p>A move on a normal cell is observed by both players and behaves like ordinary tic-tac-toe.</p></article><article class="rule-card"><span>03</span><h2>Fog actions hide location</h2><p>The opponent learns that a fog action happened, but not which mystery cell was attempted.</p></article><article class="rule-card"><span>04</span><h2>First claim owns the cell</h2><p>If the mystery cell is empty, the acting player claims it. If it was already claimed, the attempt fails and still consumes the turn.</p></article><article class="rule-card"><span>05</span><h2>No repeated probing</h2><p>Each player may attempt each mystery cell at most once. A player remembers its own attempted cells and whether each attempt succeeded.</p></article><article class="rule-card"><span>06</span><h2>Game ending is public</h2><p>If a hypothetical hidden action would have ended the game but play continues, that hypothetical history is eliminated from the observer's information set.</p></article><article class="rule-card"><span>07</span><h2>True board decides victory</h2><p>Three in a row on the underlying board wins even if some ownership is hidden from the opponent.</p></article><article class="rule-card"><span>08</span><h2>Strategies cannot use hidden truth</h2><p>Every legal play strategy acts from its information set. Only the simulation-only Oracle benchmark sees the true state.</p></article></div></section>
     </main>
-    <footer><span>Tic-Tac-Nope</span><span>Built around information sets, not omniscience.</span></footer>
+    <footer><span>Tic-Tac-Nope</span><span>Extensive-form play · behavioral strategies · simulation.</span></footer>
   </div>
-  <script src="./app2.js"></script>
-  <script src="./enhance3.js"></script>
+  <script src="./game_theory_engine.js"></script>
+  <script src="./app4.js"></script>
 </body>
 </html>
