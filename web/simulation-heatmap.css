@@ -1,0 +1,27 @@
+/* Simulation page separation and round-robin heatmap. */
+.simulation-section{margin-top:24px}
+.simulation-section-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:14px;padding:0 2px}
+.simulation-section-heading h2{margin:3px 0 6px;font-size:1.35rem}
+.simulation-section-heading .muted{max-width:720px;margin:0}
+.quick-sim-section{padding-bottom:28px;border-bottom:1px solid rgba(42,44,39,.12)}
+.round-robin-panel{margin-top:30px;padding-top:22px}
+.round-robin-heading{align-items:flex-start;gap:22px}
+.round-robin-heading>div:first-child{max-width:720px}
+.round-robin-heading h2{margin-bottom:7px}
+.round-robin-heading .muted{margin:0;line-height:1.5}
+.round-robin-actions{display:flex;flex-direction:column;align-items:flex-end;gap:10px;min-width:190px}
+.round-robin-actions .secondary-btn{white-space:nowrap}
+.heat-legend{display:flex;align-items:center;justify-content:flex-end;gap:5px;margin:4px 0 16px;color:#72746b;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.heat-swatch{width:26px;height:10px;border-radius:3px;display:inline-block;border:1px solid rgba(42,44,39,.08)}
+.heat-very-low,.rr-very-low{background:#d98d83!important;color:#4f211c!important}
+.heat-low,.rr-low{background:#efd0c5!important;color:#654039!important}
+.heat-neutral,.rr-neutral{background:#f2ead1!important;color:#5c543b!important}
+.heat-high,.rr-high{background:#cfdfc9!important;color:#35503a!important}
+.heat-very-high,.rr-very-high{background:#76977a!important;color:#fff!important}
+.rr-table{box-shadow:0 8px 24px rgba(37,40,33,.05)}
+.rr-row>*{transition:background .18s ease,color .18s ease,transform .18s ease}
+.rr-row>span.rr-score-cell{font-weight:900;font-variant-numeric:tabular-nums;cursor:default}
+.rr-row>span.rr-score-cell:hover{position:relative;z-index:2;transform:scale(1.04);box-shadow:0 3px 12px rgba(38,40,33,.15)}
+.rr-head>*{font-weight:800}
+.round-robin>.muted{padding:28px 8px;text-align:center}
+@media(max-width:800px){.round-robin-heading{flex-direction:column}.round-robin-actions{width:100%;align-items:stretch}.round-robin-actions .pill{align-self:flex-start}.heat-legend{justify-content:flex-start;flex-wrap:wrap}.simulation-section-heading{display:block}}
