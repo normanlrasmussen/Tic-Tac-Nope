@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'web/**'
+      - 'game_theory_validation.js'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -26,6 +27,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate game-theory engine
+        run: node game_theory_validation.js
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
