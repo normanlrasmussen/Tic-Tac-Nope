@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="./theme2.css" />
   <link rel="stylesheet" href="./theme3.css" />
   <link rel="stylesheet" href="./game-theory.css" />
+  <link rel="stylesheet" href="./simulation-heatmap.css" />
 </head>
 <body>
   <div class="app-shell">
@@ -73,8 +74,25 @@
 
       <section id="page-simulate" class="page" aria-labelledby="simulate-title">
         <div class="page-head"><div><p class="eyebrow">STRATEGY ARENA</p><h1 id="simulate-title">Make the algorithms play each other.</h1><p class="lede">Run controlled head-to-head experiments under the same fog configuration. Alternate the opening player to separate strategy quality from first-move advantage.</p></div><button class="secondary-btn" data-page="strategies">Read theory</button></div>
-        <div class="sim-layout"><aside class="panel sim-controls"><p class="kicker">MATCHUP</p><label class="field-label" for="sim-o">O strategy</label><select id="sim-o" class="strategy-select"></select><label class="field-label" for="sim-x">X strategy</label><select id="sim-x" class="strategy-select"></select><label class="field-label" for="sim-games">Games</label><input id="sim-games" class="sim-input" type="number" min="10" max="5000" step="10" value="250" /><label class="field-label" for="sim-start">Opening rule</label><select id="sim-start" class="strategy-select"><option value="alternate">Alternate opener</option><option value="o">O always opens</option><option value="x">X always opens</option></select><p class="setup-note">Simulation uses the mystery cells selected on the Play page. The Oracle benchmark is allowed here and is explicitly omniscient.</p><button id="run-sim" class="primary-btn">Run matchup</button><button id="run-round-robin" class="secondary-btn">Quick round robin</button></aside><section class="panel sim-results"><div class="panel-heading"><div><p class="kicker">RESULTS</p><h2 id="sim-title">Choose two strategies</h2></div><span id="sim-progress" class="pill">idle</span></div><div id="sim-metrics" class="sim-metrics"></div><div id="sim-bars" class="record-bars"></div><div id="sim-detail" class="sim-detail"></div></section></div>
-        <section class="panel round-robin-panel"><div class="panel-heading"><div><p class="kicker">ROUND ROBIN</p><h2>Cross-strategy score table</h2></div><span class="pill">O score = win + 0.5 draw</span></div><div id="round-robin" class="round-robin"></div></section>
+
+        <section class="simulation-section quick-sim-section" aria-labelledby="quick-sim-title">
+          <div class="simulation-section-heading">
+            <div><p class="kicker">QUICK MATCHUP</p><h2 id="quick-sim-title">Compare two strategies directly</h2><p class="muted">Choose O and X, set the game count and opening rule, then run one focused head-to-head experiment.</p></div>
+          </div>
+          <div class="sim-layout">
+            <aside class="panel sim-controls"><p class="kicker">MATCHUP SETTINGS</p><label class="field-label" for="sim-o">O strategy</label><select id="sim-o" class="strategy-select"></select><label class="field-label" for="sim-x">X strategy</label><select id="sim-x" class="strategy-select"></select><label class="field-label" for="sim-games">Games</label><input id="sim-games" class="sim-input" type="number" min="10" max="5000" step="10" value="250" /><label class="field-label" for="sim-start">Opening rule</label><select id="sim-start" class="strategy-select"><option value="alternate">Alternate opener</option><option value="o">O always opens</option><option value="x">X always opens</option></select><p class="setup-note">Simulation uses the mystery cells selected on the Play page. The Oracle benchmark is allowed here and is explicitly omniscient.</p><button id="run-sim" class="primary-btn">Run matchup</button></aside>
+            <section class="panel sim-results"><div class="panel-heading"><div><p class="kicker">QUICK RESULTS</p><h2 id="sim-title">Choose two strategies</h2></div><span id="sim-progress" class="pill">idle</span></div><div id="sim-metrics" class="sim-metrics"></div><div id="sim-bars" class="record-bars"></div><div id="sim-detail" class="sim-detail"></div></section>
+          </div>
+        </section>
+
+        <section class="panel round-robin-panel simulation-section" aria-labelledby="round-robin-title">
+          <div class="panel-heading round-robin-heading">
+            <div><p class="kicker">ROUND ROBIN</p><h2 id="round-robin-title">See every strategy matchup at once</h2><p class="muted">Each row is the O strategy and each column is the X strategy. Darker green means O performs better; darker red means O performs worse.</p></div>
+            <div class="round-robin-actions"><span class="pill">O score = win + 0.5 draw</span><button id="run-round-robin" class="secondary-btn">Run round robin</button></div>
+          </div>
+          <div class="heat-legend" aria-label="Round-robin heatmap legend"><span>O weaker</span><i class="heat-swatch heat-very-low"></i><i class="heat-swatch heat-low"></i><i class="heat-swatch heat-neutral"></i><i class="heat-swatch heat-high"></i><i class="heat-swatch heat-very-high"></i><span>O stronger</span></div>
+          <div id="round-robin" class="round-robin"><p class="muted">Run the round robin to generate the cross-strategy heatmap.</p></div>
+        </section>
       </section>
 
       <section id="page-rules" class="page" aria-labelledby="rules-title"><div class="page-head"><div><p class="eyebrow">RULES OF THE FOG</p><h1 id="rules-title">Tic-tac-toe where action history matters.</h1><p class="lede">The true board determines wins. Information determines decisions.</p></div><button class="secondary-btn" data-page="play">Play now</button></div><div class="rules-flow"><article class="rule-card"><span>01</span><h2>Choose mystery cells</h2><p>Before the match, select at least two fog cells. Both players know which locations are mysterious.</p></article><article class="rule-card"><span>02</span><h2>Visible moves are public</h2><p>A move on a normal cell is observed by both players and behaves like ordinary tic-tac-toe.</p></article><article class="rule-card"><span>03</span><h2>Fog actions hide location</h2><p>The opponent learns that a fog action happened, but not which mystery cell was attempted.</p></article><article class="rule-card"><span>04</span><h2>First claim owns the cell</h2><p>If the mystery cell is empty, the acting player claims it. If it was already claimed, the attempt fails and still consumes the turn.</p></article><article class="rule-card"><span>05</span><h2>No repeated probing</h2><p>Each player may attempt each mystery cell at most once. A player remembers its own attempted cells and whether each attempt succeeded.</p></article><article class="rule-card"><span>06</span><h2>Game ending is public</h2><p>If a hypothetical hidden action would have ended the game but play continues, that hypothetical history is eliminated from the observer's information set.</p></article><article class="rule-card"><span>07</span><h2>True board decides victory</h2><p>Three in a row on the underlying board wins even if some ownership is hidden from the opponent.</p></article><article class="rule-card"><span>08</span><h2>Strategies cannot use hidden truth</h2><p>Every legal play strategy acts from its information set. Only the simulation-only Oracle benchmark sees the true state.</p></article></div></section>
@@ -83,5 +101,29 @@
   </div>
   <script src="./game_theory_engine.js"></script>
   <script src="./app4.js"></script>
+  <script>
+    (() => {
+      const tableRoot = document.getElementById('round-robin');
+      if (!tableRoot) return;
+
+      const colorRoundRobin = () => {
+        tableRoot.querySelectorAll('.rr-row:not(.rr-head) span').forEach((cell) => {
+          const value = Number.parseFloat(cell.textContent);
+          if (!Number.isFinite(value)) return;
+          cell.classList.remove('rr-very-low', 'rr-low', 'rr-neutral', 'rr-high', 'rr-very-high');
+          cell.classList.add('rr-score-cell');
+          if (value < 0.30) cell.classList.add('rr-very-low');
+          else if (value < 0.45) cell.classList.add('rr-low');
+          else if (value <= 0.55) cell.classList.add('rr-neutral');
+          else if (value <= 0.70) cell.classList.add('rr-high');
+          else cell.classList.add('rr-very-high');
+          cell.title = `O score: ${value.toFixed(2)}`;
+        });
+      };
+
+      new MutationObserver(colorRoundRobin).observe(tableRoot, { childList: true, subtree: true });
+      colorRoundRobin();
+    })();
+  </script>
 </body>
 </html>
