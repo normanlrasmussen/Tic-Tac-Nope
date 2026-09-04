@@ -19,8 +19,11 @@
   loadScript('./strategy-research-update.js', () => {
     loadScript('./app4-core.js', () => {
       if (window.TTNResearchUpdate?.afterCore) window.TTNResearchUpdate.afterCore();
-      loadScript('./strategy-data.js', () => {
-        loadScript('./strategy-guide.js', openHashPage);
+      loadScript('./round-robin-controls.js', () => {
+        if (window.TTNRoundRobinControls?.install) window.TTNRoundRobinControls.install();
+        loadScript('./strategy-data.js', () => {
+          loadScript('./strategy-guide.js', openHashPage);
+        });
       });
     });
   });
