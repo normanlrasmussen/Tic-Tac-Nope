@@ -2,11 +2,13 @@
 
 ## Executive conclusion
 
-The browser game is modeled as a finite, sequential, two-player, zero-sum extensive-form game with imperfect information and perfect recall. Legal strategies act only through a player's information state. The only strategy allowed to inspect the true hidden state is the explicitly labeled simulation-only **Omniscient Oracle** benchmark.
+Tic-Tac-Nope is modeled as a finite, sequential, two-player, zero-sum extensive-form game with imperfect information and perfect recall. Legal strategies act only through a player's information state. The only strategy allowed to inspect the actual hidden state is the explicitly simulation-only **Omniscient Oracle** benchmark.
 
-The equilibrium strategy uses **outcome-sampling Monte Carlo Counterfactual Regret Minimization (MCCFR)**. The implementation follows the standard importance-weighted outcome-sampling estimator used in the OpenSpiel reference implementation. This is a theoretically convergent approximate-equilibrium method for finite two-player zero-sum perfect-recall extensive-form games. A finite training run is not claimed to be an exact Nash equilibrium.
+The principal game-theoretic strategy is now named **Regret-Matched Behavioral (MCCFR)**. This name is deliberate: the deployed policy is a behavioral strategy \(\sigma_i(a\mid I)\), while outcome sampling is only the estimator used during training. The solver remains outcome-sampling Monte Carlo Counterfactual Regret Minimization (MCCFR), following the standard importance-weighted structure used by OpenSpiel.
 
-No game-state abstraction, utility approximation, or hidden-state leakage is used by the MCCFR solver. Sampling changes the computational estimator, not the game being solved.
+The previous **Softmax Mixed** and deterministic **Extensive CFR (modal)** strategies have been removed from the active strategy set. Softmax added randomness without an equilibrium interpretation; the modal projection discarded strategically necessary randomization from the regret policy and therefore did not inherit the equilibrium guarantee.
+
+The revised **Belief-State Search** no longer hands future play to an omniscient continuation oracle. The revised **Regret-Weighted Thompson Sampling** no longer assigns equal probability to every compatible history; it uses reach probabilities under the learned regret behavioral policy as its reference history model.
 
 ## 1. Formal game model
 
@@ -18,82 +20,84 @@ s=(B_O,B_X,T_O,T_X,p,o_O,o_X),
 
 where `B_O,B_X` are true-ownership bitmasks, `T_O,T_X` are attempted-mystery-cell bitmasks, `p` is the player to move, and `o_O,o_X` are the complete action/observation histories available to each player. The mystery-cell set and starting player are common knowledge.
 
-### Legal actions
+For a visible cell, legality is public. For a mystery cell `c`, player `i` may attempt it iff `c` is not in `T_i`; underlying occupancy does not affect legality. If the opponent already owns the mystery cell, the attempt fails and still consumes the turn. This is essential: making hidden occupancy affect the legal action set would leak private information.
 
-For a normal cell, the action is legal iff the cell is truly empty. This does not leak private information because all non-mystery occupancy is public.
-
-For a mystery cell `c`, player `i` may attempt it iff `c` is not in `T_i`. Underlying occupancy does **not** affect legality. If the opponent already owns the mystery cell, the action fails and still consumes the turn. Modeling an occupied mystery cell as illegal would reveal hidden state through the action set and change the game.
-
-### Terminal utility
+Terminal utility is
 
 \[
-u_O(z)=\begin{cases}+1,&O\text{ wins},\\0,&\text{draw},\\-1,&X\text{ wins},\end{cases}
-\qquad u_X(z)=-u_O(z).
+u_O(z)\in\{-1,0,+1\},\qquad u_X(z)=-u_O(z),
 \]
 
-Therefore the game is exactly two-player zero-sum.
+so the modeled game is exactly two-player zero-sum.
 
 ## 2. Information sets and perfect recall
 
-Each player observes every visible move and its location; an opponent mystery action only as “a fog action occurred”; its own mystery-action location; whether its own mystery action succeeded or failed; and whether the game ended.
-
-The information-state key is
+The information key is
 
 \[
 I_i(h)=\bigl(i,\text{start player},\text{mystery mask},o_i(h)\bigr).
 \]
 
-Two histories are in the same information set exactly when they generate the same stored observation history for the acting player.
+A player observes visible moves and locations, its own mystery-action locations and success/failure results, an opponent mystery action only as a fog action, terminal/nonterminal status, and the ordering of all observations.
 
-A player never forgets any public action, the identity of any mystery cell it personally attempted, the success/failure result, or the ordering of observations. Thus histories merged into one information set contain the same sequence of that player's previous information sets and own actions. This is the perfect-recall condition needed for behavioral-strategy analysis and CFR convergence.
+No player forgets an earlier action or observation. Thus the modeled game has perfect recall. The engine also asserts that histories sharing one information key expose the same legal action set.
 
-The engine also asserts at runtime that any repeated information key has the same legal action set. A violation throws immediately rather than silently solving a malformed game.
-
-## 3. Public inference from nontermination
-
-Game continuation is itself an observation. If one hypothetical hidden location would have immediately produced three in a row but the real game continues, that hypothetical history is impossible and must be removed. Belief transitions therefore keep a hypothetical successor only if terminal/nonterminal status matches the public outcome; if the game ends, the winner must also match.
-
-## 4. Strategy definitions
-
-### Belief Search
+This matters because a legal behavioral policy must satisfy
 
 \[
-Q(I,a)=\frac{1}{|I|}\sum_{h\in I}V_{\text{oracle}}(T(h,a)).
+\sigma_i(a\mid h)=\sigma_i(a\mid h')\quad\text{whenever }h,h'\in I.
 \]
 
-The same action is applied to every compatible history. Continuation is exact perfect-information minimax for the same Tic-Tac-Nope move rules, including attempted-cell state and failed mystery actions. This is an internally consistent one-step information-set heuristic, not a full imperfect-information equilibrium.
+## 3. Why behavioral strategy is the right representation
 
-### Softmax Mixed
+A normal-form mixed strategy randomizes over complete pure contingency plans. That representation is enormous in this game. Under perfect recall, Kuhn's theorem gives outcome equivalence between mixed strategies over pure plans and behavioral strategies that randomize at information sets. The implementation therefore stores and samples
 
 \[
-\sigma(a\mid I)=\frac{\exp(\beta Q(I,a))}{\sum_b\exp(\beta Q(I,b))},\qquad \beta=2.2.
+\sigma_i(a\mid I)
 \]
 
-This is a valid randomized behavioral rule but not game-theoretic equilibrium mixing.
+directly.
 
-### Robust Maximin
+This is why **Regret-Matched Behavioral (MCCFR)** is a true behavioral strategy even though the training algorithm samples trajectories. Sampling is a computational device used to estimate regret; it does not change the mathematical object used at play time.
+
+## 4. Active strategies
+
+### 4.1 Belief-State Search
+
+The old Belief Search used
 
 \[
-a^*=\arg\max_a\min_{h\in I}V_{\text{oracle}}(T(h,a)).
+Q(I,a)=\frac1{|I|}\sum_{h\in I}V_{\text{oracle}}(T(h,a)),
 \]
 
-This is an ambiguity-averse robust rule. It protects the worst compatible history but is not generally a Nash equilibrium.
+which respected the current information set but then evaluated the future as though the hidden state became known. That continuation was information-advantaged and could mis-rank actions.
 
-### Thompson World Sampling
-
-Sample one compatible history from the equal-weight possibility model, then choose its oracle-best move. Randomization comes from uncertainty over hidden histories rather than strategic indifference.
-
-### Extensive-Form Modal
-
-Let \(\bar\sigma^{\text{MCCFR}}(a\mid I)\) be the learned average behavior strategy. The modal projection plays
+The revised strategy uses the conceptual objective
 
 \[
-a^*=\arg\max_a\bar\sigma^{\text{MCCFR}}(a\mid I).
+Q(I,a)\approx\frac1{|I|}\sum_{h\in I}
+\mathbb E_{\bar\sigma_R}\!\left[u_i\mid h,a\right],
 \]
 
-It is a deterministic visualization of the extensive-form policy and is not guaranteed to retain equilibrium properties because strategic randomization may be essential.
+where \(\bar\sigma_R\) is the learned average regret behavioral policy used only for future continuation.
 
-### Equilibrium Mixed (Outcome-Sampling MCCFR)
+Implementation properties:
+
+1. every currently compatible history is included;
+2. the same candidate action is applied across the acting player's information set;
+3. hypothetical states retain both `obsO` and `obsX`;
+4. each future player selects actions from a policy keyed only by that player's own information state;
+5. continuation is estimated with bounded Monte Carlo behavioral rollouts rather than an omniscient minimax continuation.
+
+Therefore hidden truth is not revealed to future players during Belief-State Search.
+
+The remaining assumptions are explicit. Current compatible histories are still equal-weighted, future behavior is evaluated relative to the regret-policy continuation model, and finite rollouts introduce variance. This is an information-safe heuristic, not a Nash solver.
+
+#### Why not make Belief-State Search an exact oracle?
+
+An exact continuation that preserves both players' information constraints must solve strategic decisions over future information sets. That is no longer a simple hidden-state oracle; it is essentially another solve of the imperfect-information extensive-form game. Doing that from scratch at every move would duplicate the equilibrium problem and is computationally inappropriate for a browser strategy whose purpose is to remain a distinct, interpretable heuristic.
+
+### 4.2 Regret-Matched Behavioral (MCCFR)
 
 Play samples directly from
 
@@ -101,114 +105,126 @@ Play samples directly from
 a\sim\bar\sigma^{\text{MCCFR}}(\cdot\mid I).
 \]
 
-This is the primary game-theoretic mixed strategy.
+CFR minimizes counterfactual regret at information sets. In finite two-player zero-sum perfect-recall games, vanishing average regret implies convergence of the average strategy toward the Nash/minimax set.
 
-### Uniform Random
-
-Uniform over legal actions; used as a control baseline.
-
-### Omniscient Oracle
-
-Exact perfect-information minimax on the true state. It is illegal under the imperfect-information game and is simulation-only.
-
-## 5. Why behavioral mixing is the correct representation
-
-A normal-form mixed strategy is a distribution over complete pure contingency plans, which is enormous here. Under perfect recall, Kuhn's theorem gives outcome equivalence between mixed strategies over pure plans and behavioral strategies that randomize independently at each information set. The implementation therefore stores \(\sigma_i(a\mid I)\) rather than enumerating complete pure strategies.
-
-## 6. MCCFR correctness
-
-CFR minimizes counterfactual regret locally at information sets; in two-player zero-sum self-play, the average strategy approaches a Nash equilibrium. Literal full-tree traversal is too expensive for this game, so the deployed solver uses **outcome-sampling MCCFR**.
-
-For updating player `i`, one terminal trajectory is sampled. At player `i`'s information sets, the sampling policy uses exploration
+The implementation uses outcome-sampling MCCFR. For updating player `i`, a terminal trajectory is sampled. At player `i` information sets the sampling policy includes exploration
 
 \[
 q(a\mid I)=\epsilon/|A(I)|+(1-\epsilon)\sigma(a\mid I),
 \]
 
-with \(\epsilon=0.6\). Opponent nodes are sampled from the current policy.
+with \(\epsilon=0.6\). Importance weighting produces unbiased sampled counterfactual-value estimates under the standard MCCFR conditions.
 
-With a zero baseline, only sampled action \(a_s\) has nonzero sampled child estimate:
+Regret matching uses positive cumulative regret and falls back to uniform when all positive regrets are zero. The time-averaged behavioral policy is the deployed policy.
 
-\[
-\tilde v(a)=\begin{cases}v_{\text{child}}/q(a_s\mid I),&a=a_s,\\0,&a\neq a_s.\end{cases}
-\]
+What can be claimed:
 
-and
+- the target game is the original unabstracted extensive-form game;
+- the policy is a genuine behavioral strategy;
+- MCCFR has the standard no-regret / equilibrium convergence result under the stated assumptions;
+- the average policy, not the modal action, is the equilibrium-target object;
+- a finite training run is only an approximate equilibrium;
+- the site does not currently compute an exact exploitability certificate.
 
-\[
-\tilde v(I)=\sum_a\sigma(a\mid I)\tilde v(a).
-\]
+#### Why not replace MCCFR with full-tree CFR?
 
-Counterfactual estimates apply the opponent-reach / sample-reach importance ratio:
+Full-tree CFR would traverse all relevant branches every iteration and remove Monte Carlo sampling variance per iteration, but that does not make the resulting strategy “more behavioral.” Both methods produce behavioral policies.
 
-\[
-\tilde v_i(I,a)=\tilde v(a)\frac{\pi_{-i}}{\pi_q},\qquad
-\tilde v_i(I)=\tilde v(I)\frac{\pi_{-i}}{\pi_q}.
-\]
+The existing development benchmark already shows the computational issue: a 100-iteration external-sampling prototype required about 1.25 seconds and touched more than 300,000 information sets, while 10,000 outcome-sampling iterations took about 0.47 seconds on the same development runtime. Literal full-tree traversal is more expensive still. For a browser-hosted 3×3 game with private observation histories, outcome sampling gives a much better training-cost tradeoff while retaining the convergence theory.
 
-Regret update:
+### 4.3 Worst-Case Assumption
 
-\[
-R_i(I,a)\leftarrow R_i(I,a)+\tilde v_i(I,a)-\tilde v_i(I).
-\]
-
-Average-strategy accumulator:
+This is the renamed former Robust Maximin heuristic:
 
 \[
-S_i(I,a)\leftarrow S_i(I,a)+\frac{\pi_i\sigma(a\mid I)}{\pi_q}.
+a^*=\arg\max_a\min_{h\in I}V_{\text{oracle}}(T(h,a)).
 \]
 
-Regret matching uses positive cumulative regret and falls back to uniform when all positive regrets are zero. These equations match the standard OpenSpiel outcome-sampling MCCFR reference structure. Exploration supplies support at the updating player's actions; importance weighting corrects sampling bias.
+The new name is more precise. The inner adversary is the currently compatible hidden history, not the opponent's complete behavioral strategy. Therefore calling the method simply “maximin” risks confusing hidden-state robustness with game-theoretic minimax.
 
-### What is and is not guaranteed
+It exactly optimizes its stated one-step worst-hidden-state objective but does not guarantee the extensive-form game value.
 
-- The algorithm targets the original unabstracted extensive-form game.
-- MCCFR has regret/convergence guarantees under the stated game assumptions.
-- The **average** strategy is the object with the equilibrium convergence guarantee.
-- A finite iteration count is only an approximate equilibrium.
-- The website does not claim an exact Nash certificate or exact exploitability value.
+### 4.4 Regret-Weighted Thompson Sampling
 
-## 7. Speed optimization without changing the target game
+The old Thompson implementation sampled
 
-The optimization pass intentionally avoids state abstraction:
+\[
+h\sim\operatorname{Uniform}(I).
+\]
 
-1. integer bitmasks for O ownership, X ownership, attempted cells, and mystery cells;
-2. eight precomputed win masks;
-3. memoized omniscient minimax by the complete strategically relevant perfect-information state;
-4. sparse information-set tables created only when sampled trajectories reach them;
-5. seeded low-overhead xorshift RNG for training;
-6. lazy equilibrium training only for configurations that request it;
-7. outcome sampling instead of exhaustive/full external traversal.
+The revised strategy uses policy-induced reach weights. For each compatible history `h`, replay the history from the root and compute its reach under the learned average regret behavioral policy:
 
-No board-symmetry reduction is used because a correct symmetry map would also have to transform the mystery configuration and every private observation history; an incorrect canonicalization could merge distinct information sets and violate perfect recall.
+\[
+w(h)=\pi^{\bar\sigma_R}(h).
+\]
 
-## 8. Validation performed before deployment
+Conditioning on the current information set gives
 
-The implementation pass tested:
+\[
+P_{\bar\sigma_R}(h\mid I)
+=\frac{w(h)}{\sum_{h'\in I}w(h')}.
+\]
 
-- 5,000 random-history information-set action-consistency episodes;
-- exact zero-sum terminal utilities;
-- finite-horizon/nontermination guards;
-- 500 incremental belief-tracking games in which the reachable truth was never eliminated;
-- acting-player legal-action agreement across tracked possible histories;
-- probability normalization and nonnegativity for MCCFR policies;
-- all 64 ordered pairings of the 8 simulation strategies with multiple smoke-test games per pairing.
+The strategy samples one compatible history from this distribution and then chooses the perfect-information oracle-best current action in that sampled history.
 
-All checks passed.
+This is a more defensible Thompson-style baseline because the history distribution is tied to a strategic generative model rather than arbitrary equal weighting. However, it is Bayesian only conditional on accepting the learned regret policy as the model that generated prior behavior. If the real opponent behaves differently, the posterior-style weights can be wrong.
 
-## 9. Development performance benchmark
+#### Why not use Belief-State Search to create the Thompson distribution?
 
-On the local Node runtime used for validation with the default mystery cells `{2,4}` in one-based display numbering:
+Belief-State Search is deterministic given its information set and rollout estimates; it is not itself a calibrated probability model over opponent actions or hidden histories. Turning its scores into probabilities would require an extra stochastic/noise model. That would recreate the same conceptual problem as the removed Softmax strategy: arbitrary score-to-probability randomization without a game-theoretic reason for those probabilities. The regret behavioral policy already supplies a coherent mixed reference policy, so it is the appropriate source.
 
-- 100 external-sampling prototype iterations: about 1.25 s and more than 300k visited information sets;
-- 10,000 deployed outcome-sampling iterations: about 0.47 s;
-- 20,000 deployed outcome-sampling iterations during the full validation: about 0.82 s and roughly 61k information sets stored.
+### 4.5 Uniform Random
 
-These are development-machine measurements, not browser performance guarantees.
+\[
+\sigma(a\mid I)=1/|A(I)|.
+\]
 
-## 10. References
+A control strategy only. Randomness by itself is not equilibrium mixing.
+
+### 4.6 Omniscient Oracle
+
+Exact perfect-information minimax on the actual hidden state. It is illegal under the imperfect-information game and remains simulation-only.
+
+## 5. Retired strategies
+
+### Softmax Mixed — removed
+
+Softmax converted heuristic action scores into probabilities. It was a valid stochastic behavioral rule but had no Nash, minimax, or regret interpretation. Because the project now distinguishes strategic mixing from arbitrary randomization, this strategy was removed rather than relabeled as “mixed.”
+
+### Extensive CFR modal projection — removed
+
+The modal projection played
+
+\[
+\arg\max_a\bar\sigma^{\text{MCCFR}}(a\mid I).
+\]
+
+It discarded the equilibrium policy's randomization. A 55/45 behavioral mix becoming 100/0 can make an otherwise secure policy exploitable. The modal action remains useful as an analysis/visualization statistic, but it should not be presented as a separate strategic policy.
+
+This removal does not depend on a small round-robin sample. A 30-game cell in the browser heatmap is too noisy to establish a general theoretical ranking, and matchup performance cannot restore an equilibrium guarantee that the deterministic projection does not possess.
+
+## 6. MCCFR implementation notes
+
+The deployed solver follows the standard outcome-sampling structure with a zero baseline. A sampled trajectory is corrected by its sampling probability, regrets are accumulated at visited information sets, and the average strategy is reach-weighted.
+
+The implementation retains sparse information-set tables, integer bitmasks, memoized perfect-information oracle values for benchmark/heuristic use, seeded xorshift RNG for training, and lazy training by fog configuration and starting player.
+
+No board-state abstraction or symmetry merge is used in the regret solver. This avoids accidentally merging distinct private observation histories.
+
+## 7. Empirical evaluation policy
+
+Round-robin results answer a matchup question, not a theorem question. Recommended practice is:
+
+- report number of games per cell;
+- alternate the starting player;
+- distinguish legal strategies from the Oracle benchmark;
+- use substantially more than 30 games when making performance claims about stochastic strategies;
+- report uncertainty or repeated seeds when comparing close scores;
+- do not infer Nash optimality from round-robin rank.
+
+## 8. References
 
 - Zinkevich, M., Johanson, M., Bowling, M., & Piccione, C. (2007). *Regret Minimization in Games with Incomplete Information*. NeurIPS.
 - Lanctot, M., Waugh, K., Zinkevich, M., & Bowling, M. (2009). *Monte Carlo Sampling for Regret Minimization in Extensive Games*. NeurIPS.
 - Kuhn, H. W. (1953). *Extensive Games and the Problem of Information*.
-- Google DeepMind OpenSpiel, `outcome_sampling_mccfr.py`, used as an implementation-level reference for the importance-weighted estimator structure.
+- Google DeepMind OpenSpiel, `outcome_sampling_mccfr.py`, implementation-level reference for the outcome-sampling MCCFR estimator.
