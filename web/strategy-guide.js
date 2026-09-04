@@ -14,115 +14,151 @@
     document.head.appendChild(link);
   }
 
-  const order = ['belief','nash','robust','thompson_uniform','thompson','random','oracle'];
-  const route = (id) => `./strategy-${id}.html`;
+  const order = ['belief', 'nash', 'robust', 'thompson_uniform', 'thompson', 'random', 'oracle'];
+
+  const REFERENCES = {
+    kuhn: {
+      label: 'Kuhn (1953), Extensive Games and the Problem of Information',
+      href: 'https://doi.org/10.1515/9781400829156-011',
+      note: 'Perfect recall and the equivalence of mixed and behavioral strategies.'
+    },
+    cfr: {
+      label: 'Zinkevich, Johanson, Bowling & Piccione (2007), Regret Minimization in Games with Incomplete Information',
+      href: 'https://papers.nips.cc/paper_files/paper/2007/hash/08d98638c6fcd194a4b1e6992063e944-Abstract.html',
+      note: 'Counterfactual regret minimization and equilibrium convergence in two-player zero-sum extensive-form games.'
+    },
+    mccfr: {
+      label: 'Lanctot, Waugh, Zinkevich & Bowling (2009), Monte Carlo Sampling for Regret Minimization in Extensive Games',
+      href: 'https://papers.nips.cc/paper_files/paper/2009/hash/00411460f7c92d2124a67ea0f4cb5f85-Abstract.html',
+      note: 'Monte Carlo CFR, including outcome-sampling regret estimation.'
+    },
+    openspiel: {
+      label: 'OpenSpiel, outcome_sampling_mccfr.py',
+      href: 'https://github.com/google-deepmind/open_spiel/blob/master/open_spiel/python/algorithms/outcome_sampling_mccfr.py',
+      note: 'Implementation-level reference for the outcome-sampling estimator used as the site’s comparison point.'
+    },
+    thompson: {
+      label: 'Thompson (1933), On the Likelihood that One Unknown Probability Exceeds Another in View of the Evidence of Two Samples',
+      href: 'https://doi.org/10.1093/biomet/25.3-4.285',
+      note: 'Classical probability-matching / posterior-sampling idea underlying the Thompson-style baselines.'
+    },
+    minimax: {
+      label: 'von Neumann (1928), Zur Theorie der Gesellschaftsspiele',
+      href: 'https://doi.org/10.1007/BF01448847',
+      note: 'Foundational minimax result; the Oracle here applies exact minimax only after hidden information is removed.'
+    }
+  };
+
+  const refsByStrategy = {
+    belief: ['cfr', 'mccfr', 'kuhn'],
+    nash: ['kuhn', 'cfr', 'mccfr', 'openspiel'],
+    robust: ['minimax'],
+    thompson_uniform: ['thompson'],
+    thompson: ['thompson', 'cfr', 'mccfr'],
+    random: ['kuhn'],
+    oracle: ['minimax']
+  };
 
   const pageHead = document.querySelector('#page-strategies .page-head');
   const title = pageHead?.querySelector('h1');
   const lede = pageHead?.querySelector('.lede');
-  if (title) title.textContent = 'Strategy overview';
-  if (lede) lede.textContent = 'Each method answers a distinct theoretical question: belief-based exploitation, regret-minimizing equilibrium play, worst-case hidden-state protection, uniform scenario sampling, policy-weighted scenario sampling, a random control, or an information-advantaged oracle benchmark.';
+  if (title) title.textContent = 'Strategy reference';
+  if (lede) lede.textContent = 'A single continuous theory page: assumptions, objective, guarantees, failure modes, computational cost, and references for every strategy used in the lab.';
 
-  root.className = 'strategy-overview-grid';
+  root.className = 'strategy-document';
+  root.innerHTML = `${renderOverview()}${renderContents()}${order.map(renderStrategySection).join('')}${renderClosingNotes()}`;
 
-  const bestPanel = `
-    <article class="panel strategy-overview-best">
-      <div>
-        <p class="kicker">IS THERE A BEST?</p>
-        <h2>There is one strongest theoretical default, but no strategy dominates every opponent.</h2>
-        <p>If “best” means <strong>hardest to exploit against an unknown strategic opponent</strong>, use <strong>Regret-Matched Behavioral (MCCFR)</strong>. It is the legal strategy here with the standard two-player zero-sum no-regret / Nash-minimax convergence result.</p>
-        <p>If “best” means <strong>maximize score against one particular imperfect opponent</strong>, a model-based heuristic can do better by exploiting that opponent. That extra payoff is opponent-dependent and comes without the same worst-case security.</p>
-      </div>
-      <div class="overview-best-cases">
-        <span><b>Unknown strategic opponent</b>Regret-Matched Behavioral</span>
-        <span><b>Belief-based exploitation</b>Belief-State Search</span>
-        <span><b>Worst hidden-state protection</b>Worst-Case Assumption</span>
-        <span><b>Clean Thompson baseline</b>Uniform Thompson</span>
-        <span><b>Strategic history weighting</b>Regret-Weighted Thompson</span>
-      </div>
-    </article>`;
+  function renderOverview() {
+    return `
+      <section class="strategy-doc-intro" id="strategy-overview">
+        <p class="kicker">THE EXTENSIVE-FORM MODEL</p>
+        <h2>Strategies act on information sets, not on the hidden true node.</h2>
+        <p>Tic-Tac-Nope is a finite two-player zero-sum extensive-form game with imperfect information. A player’s information state contains the complete sequence of public moves, observed opponent fog events, and that player’s own fog actions and success/failure observations.</p>
+        <p>Because nobody forgets an action or observation they previously knew, the implemented game has <strong>perfect recall</strong>. That fact is critical: by <strong>Kuhn’s theorem</strong>, in a perfect-recall extensive game a normal-form mixed strategy over complete pure contingency plans has an outcome-equivalent <strong>behavioral strategy</strong> that randomizes locally as <code>σ(a|I)</code>. That is why MCCFR stores action probabilities at information sets rather than attempting to enumerate enormous complete plans.</p>
+        <blockquote><strong>“Best” depends on the question.</strong> If the goal is minimax security against an unknown strategic opponent, Regret-Matched Behavioral (MCCFR) is the strongest theoretical default here. A model-based heuristic can outperform it against a particular weak opponent, but that is exploitative performance rather than a universal dominance guarantee.</blockquote>
+      </section>`;
+  }
 
-  const cards = order.map((id, i) => {
+  function renderContents() {
+    return `
+      <nav class="strategy-toc" aria-label="Strategy section navigation">
+        <strong>On this page</strong>
+        ${order.map((id) => `<a href="#strategy-${id}">${D[id].name}</a>`).join('')}
+      </nav>`;
+  }
+
+  function renderStrategySection(id, index) {
     const d = D[id];
-    const family = T.STRATEGIES.find((s) => s.id === id)?.family || d.family;
-    const recommendation = id === 'nash' ? '<span class="overview-recommended">theoretical default</span>' : '';
-    return `<article class="panel strategy-overview-card${id === 'nash' ? ' featured' : ''}">
-      <div class="overview-card-top">
-        <span class="overview-number">${String(i + 1).padStart(2,'0')}</span>
-        <div><p class="kicker">${d.status.toUpperCase()}</p><h2>${d.name}</h2></div>
-      </div>
-      <p class="overview-verdict">${d.verdict}</p>
-      <p class="overview-copy">${d.overview}</p>
-      <div class="overview-mini-grid">
-        <div><small>ASSUMPTION</small><span>${shortAssumption(id)}</span></div>
-        <div><small>GUARANTEE</small><span>${shortGuarantee(id)}</span></div>
-        <div><small>BEST FOR</small><span>${shortBest(id)}</span></div>
-      </div>
-      <div class="overview-card-footer">
-        <div class="strategy-tags"><span>${family}</span><span>${d.playable ? 'Playable' : 'Simulation only'}</span>${recommendation}</div>
-        <a class="secondary-btn strategy-read-more" href="${route(id)}">Read full analysis →</a>
-      </div>
-    </article>`;
-  }).join('');
+    if (!d) return '';
+    const theoryNote = id === 'nash'
+      ? `<p class="strategy-theory-callout"><strong>Why behavioral play is valid here.</strong> Tic-Tac-Nope has perfect recall, so Kuhn’s theorem permits an outcome-equivalent behavioral representation <code>σ(a|I)</code> in place of a mixed strategy over complete pure plans. MCCFR therefore learns and deploys the mathematically appropriate local randomization at each information set.</p>`
+      : id === 'random'
+        ? `<p class="strategy-theory-callout"><strong>Random is not the same as mixed equilibrium play.</strong> Uniform randomization is simply a control policy. Strategic behavioral probabilities are determined by regret/indifference conditions; there is no reason for those probabilities to be uniform.</p>`
+        : '';
 
-  const compare = `
-    <article class="panel overview-compare-panel">
-      <div><p class="kicker">ONE-MINUTE COMPARISON</p><h2>What is each method actually assuming?</h2></div>
-      <div class="overview-compare-grid">
-        <div><strong>Belief-State Search</strong><span>Equal-weights every currently compatible history, then evaluates legal future play without revealing the hidden board.</span></div>
-        <div><strong>Worst-Case Assumption</strong><span>Refuses current-history probabilities and protects against the worst compatible hidden history.</span></div>
-        <div><strong>Regret-Matched Behavioral</strong><span>Learns strategic behavioral probabilities at information sets through counterfactual regret minimization.</span></div>
-        <div><strong>Uniform Thompson</strong><span>Samples one compatible history uniformly, then acts optimally in that sampled world.</span></div>
-        <div><strong>Regret-Weighted Thompson</strong><span>Uses the regret policy as a generative model to weight compatible histories before sampling one.</span></div>
-        <div><strong>Uniform Random</strong><span>Uses no strategic model and exists as a control.</span></div>
-        <div><strong>Oracle</strong><span>Sees hidden truth and therefore solves a different, easier information problem.</span></div>
-      </div>
-    </article>`;
+    return `
+      <section id="strategy-${id}" class="strategy-doc-section">
+        <header>
+          <p class="strategy-section-number">${String(index + 1).padStart(2, '0')} · ${escapeHtml(d.status)}</p>
+          <h2>${escapeHtml(d.name)}</h2>
+          <p class="strategy-doc-meta">${escapeHtml(d.family)} · ${d.playable ? 'Playable' : 'Simulation-only benchmark'}</p>
+          <p class="strategy-verdict">${escapeHtml(d.verdict)}</p>
+        </header>
 
-  root.innerHTML = bestPanel + cards + compare;
+        <h3>How it works</h3>
+        <p>${escapeHtml(d.overview)}</p>
+        <pre class="strategy-doc-formula"><code>${escapeHtml(d.formula)}</code></pre>
+        ${theoryNote}
 
-  const mixed = root.nextElementSibling;
-  const audit = mixed?.nextElementSibling;
-  if (mixed?.classList.contains('theory-core')) {
-    mixed.innerHTML = `<p class="kicker">HOW TO READ THE STRATEGIES</p>
-      <h2>Separate uncertainty about the world from strategic randomization.</h2>
-      <div class="overview-principles">
-        <div><strong>1 · Information set</strong><span>A legal action can depend only on what that player has observed. Keeping both players' observation histories prevents future-state leakage.</span></div>
-        <div><strong>2 · Belief versus behavior</strong><span>A distribution over hidden histories answers “what world might I be in?” A behavioral strategy σ(a|I) answers “how should I randomize at this information set?”</span></div>
-        <div><strong>3 · Guarantee</strong><span>Empirical round-robin strength is matchup evidence. No-regret convergence and minimax security are theoretical statements about the full strategic game.</span></div>
-      </div>`;
-  }
-  if (audit?.classList.contains('theory-core')) audit.style.display = 'none';
+        <h3>Assumptions about the players</h3>
+        <p><strong>Acting player.</strong> ${escapeHtml(d.player)}</p>
+        <p><strong>Opponent model.</strong> ${escapeHtml(d.opponent)}</p>
+        <p><strong>Hidden information.</strong> ${escapeHtml(d.hidden)}</p>
 
-  function shortAssumption(id) {
-    if (id === 'nash') return 'Perfect-recall information-set game';
-    if (id === 'belief') return 'Equal current histories + legal rollout model';
-    if (id === 'robust') return 'Worst compatible hidden history';
-    if (id === 'thompson_uniform') return 'Uniform compatible-history model';
-    if (id === 'thompson') return 'Regret-policy reach as history model';
-    if (id === 'oracle') return 'True hidden state is known';
-    return 'No strategic model';
+        <h3>Optimization objective</h3>
+        <p>${escapeHtml(d.objective)}</p>
+
+        <h3>Theoretical guarantees</h3>
+        <p>${escapeHtml(d.guarantee)}</p>
+        <p><strong>What it does not guarantee.</strong> ${escapeHtml(d.notGuarantee)}</p>
+
+        <h3>Failure modes and computational cost</h3>
+        <p>${escapeHtml(d.failure)}</p>
+        <p><strong>Cost.</strong> ${escapeHtml(d.cost)}</p>
+
+        <h3>When to use it</h3>
+        <p>${escapeHtml(d.best)}</p>
+        <p><strong>Relation to MCCFR.</strong> ${escapeHtml(d.nash)}</p>
+
+        <h3>Theoretical references</h3>
+        ${renderReferences(refsByStrategy[id] || [])}
+      </section>`;
   }
 
-  function shortGuarantee(id) {
-    if (id === 'nash') return 'Asymptotic Nash/minimax convergence';
-    if (id === 'belief') return 'Information-safe rollout estimate';
-    if (id === 'robust') return 'Exact for its current worst-state objective';
-    if (id === 'thompson_uniform') return 'Probability matching for uniform histories';
-    if (id === 'thompson') return 'Probability matching for policy-induced histories';
-    if (id === 'oracle') return 'Exact perfect-information minimax';
-    return 'None beyond legal uniform play';
+  function renderReferences(keys) {
+    if (!keys.length) return '<p>No special theoretical claim is made beyond legal game play.</p>';
+    return `<ul class="strategy-reference-list">${keys.map((key) => {
+      const ref = REFERENCES[key];
+      return `<li><a href="${ref.href}" target="_blank" rel="noreferrer">${escapeHtml(ref.label)}</a><span>${escapeHtml(ref.note)}</span></li>`;
+    }).join('')}</ul>`;
   }
 
-  function shortBest(id) {
-    return {
-      belief: 'Interpretable exploitation',
-      nash: 'Unknown strategic opponents',
-      robust: 'Ambiguity aversion',
-      thompson_uniform: 'Clean scenario-sampling baseline',
-      thompson: 'Policy-weighted scenario sampling',
-      random: 'Experimental control',
-      oracle: 'Information-value benchmark'
-    }[id];
+  function renderClosingNotes() {
+    return `
+      <section class="strategy-doc-section strategy-doc-closing" id="strategy-interpretation">
+        <p class="kicker">HOW TO INTERPRET THE SCORES</p>
+        <h2>Do not compare unlike quantities as though they were the same value.</h2>
+        <p>The Play and Analysis pages display <strong>utility on [−1,+1]</strong> for strategies whose decision rule directly scores continuation utility, and <strong>action probability on [0%,100%]</strong> for behavioral or sampling strategies. A 70% MCCFR action probability is not “better” than a +0.40 robust utility score; they answer different mathematical questions.</p>
+        <p>Round-robin scores are empirical matchup evidence. They do not create a Nash guarantee, and the Omniscient Oracle remains an intentionally unfair information benchmark.</p>
+      </section>`;
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
   }
 })();

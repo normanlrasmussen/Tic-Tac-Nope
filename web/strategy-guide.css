@@ -1,13 +1,29 @@
-/* Strategy overview: concise cards; deep theory lives on dedicated pages. */
-.strategy-overview-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:22px 0}
-.strategy-overview-best,.overview-compare-panel{grid-column:1/-1}
-.strategy-overview-best{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(280px,.8fr);gap:22px;align-items:start;background:linear-gradient(135deg,rgba(75,96,75,.08),rgba(255,255,255,.64))!important;border-color:rgba(67,87,68,.22)!important}
-.strategy-overview-best h2{margin:4px 0 10px;font-size:1.55rem}.strategy-overview-best p{margin:0 0 10px;line-height:1.6;color:#565951}
-.overview-best-cases{display:grid;gap:8px}.overview-best-cases span{display:grid;gap:2px;padding:11px 12px;border-radius:11px;border:1px solid rgba(42,44,39,.1);background:rgba(255,255,255,.58);font-size:.82rem;color:#62645d}.overview-best-cases b{font-size:.72rem;text-transform:uppercase;letter-spacing:.045em;color:#3d5742}
-.strategy-overview-card{display:flex;flex-direction:column;gap:14px;min-height:390px}.strategy-overview-card.featured{border-color:rgba(60,101,68,.34)!important;box-shadow:0 12px 30px rgba(47,75,52,.08)!important}
-.overview-card-top{display:flex;align-items:center;gap:13px}.overview-number{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;background:rgba(56,75,58,.09);color:#435744;font-weight:900}.featured .overview-number{background:#566f59;color:#fff}.overview-card-top h2{margin:2px 0 0}.overview-verdict{margin:0;font-weight:800;color:#48604c;line-height:1.4}.overview-copy{margin:0;line-height:1.58;color:#565951}
-.overview-mini-grid{display:grid;gap:7px;margin-top:auto}.overview-mini-grid>div{display:grid;grid-template-columns:92px 1fr;gap:10px;padding:9px 10px;border-radius:9px;background:rgba(255,255,255,.45);border:1px solid rgba(42,44,39,.08)}.overview-mini-grid small{font-size:.64rem;font-weight:900;letter-spacing:.05em;color:#7a7b72}.overview-mini-grid span{font-size:.79rem;color:#53564f;line-height:1.35}
-.overview-card-footer{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;margin-top:2px}.overview-card-footer .strategy-tags{margin:0}.overview-recommended{background:rgba(76,112,81,.14)!important;color:#3f6546!important}.strategy-read-more{white-space:nowrap;text-decoration:none!important;display:inline-flex;align-items:center;justify-content:center}
-.overview-compare-panel h2{margin:4px 0 14px}.overview-compare-grid,.overview-principles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.overview-compare-grid>div,.overview-principles>div{display:grid;gap:5px;padding:13px;border-radius:11px;border:1px solid rgba(42,44,39,.09);background:rgba(255,255,255,.44)}.overview-compare-grid strong,.overview-principles strong{color:#3b4b3d}.overview-compare-grid span,.overview-principles span{font-size:.84rem;color:#62645d;line-height:1.45}
-@media(max-width:900px){.strategy-overview-grid{grid-template-columns:1fr}.strategy-overview-best{grid-template-columns:1fr}.overview-card-footer{align-items:stretch;flex-direction:column}.strategy-read-more{width:100%}}
-@media(max-width:650px){.overview-compare-grid,.overview-principles{grid-template-columns:1fr}.overview-mini-grid>div{grid-template-columns:1fr;gap:3px}}
+/* Long-form strategy reference: intentionally document-like rather than card-based. */
+.strategy-document{max-width:980px;margin:10px auto 60px;color:var(--text)}
+.strategy-doc-intro{padding:10px 0 30px}
+.strategy-doc-intro h2,.strategy-doc-section h2{margin:.35rem 0 1rem;font-size:clamp(1.9rem,3.5vw,2.8rem);letter-spacing:-.035em;line-height:1.05}
+.strategy-doc-intro p,.strategy-doc-section p{font-size:.98rem;line-height:1.72;color:#55584f;margin:.7rem 0}
+.strategy-doc-intro blockquote{margin:1.8rem 0 0;padding:.2rem 0 .2rem 1.2rem;border-left:4px solid var(--accent);font-size:1rem;line-height:1.65;color:#41463f}
+.strategy-toc{position:sticky;top:91px;z-index:8;display:flex;align-items:center;gap:12px;overflow-x:auto;padding:11px 0;margin:0 0 12px;border-top:1px solid rgba(42,44,39,.14);border-bottom:1px solid rgba(42,44,39,.14);background:rgba(247,243,234,.95);backdrop-filter:blur(10px);white-space:nowrap}
+.strategy-toc strong{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:#42473f;padding-right:5px}
+.strategy-toc a{font-size:.78rem;color:#536354;text-decoration:none;border-bottom:1px solid transparent;padding:4px 0}
+.strategy-toc a:hover{border-bottom-color:currentColor}
+.strategy-doc-section{scroll-margin-top:150px;padding:46px 0 50px;border-top:1px solid rgba(42,44,39,.14)}
+.strategy-doc-section:first-of-type{border-top:0}
+.strategy-doc-section header{margin-bottom:30px}
+.strategy-section-number{margin:0!important;font-size:.72rem!important;font-weight:900!important;letter-spacing:.08em!important;text-transform:uppercase;color:var(--accent)!important}
+.strategy-doc-meta{font-size:.78rem!important;color:#777970!important;text-transform:uppercase;letter-spacing:.045em;font-weight:800}
+.strategy-verdict{font-size:1.08rem!important;color:#38523d!important;font-weight:800;max-width:760px}
+.strategy-doc-section h3{margin:2rem 0 .6rem;font-size:1.15rem;letter-spacing:-.015em;color:#30362f}
+.strategy-doc-section strong{color:#343b34}
+.strategy-doc-formula{margin:1.2rem 0 1.6rem;padding:.8rem 0 .8rem 1rem;border:0;border-left:3px solid rgba(47,111,104,.48);background:transparent;overflow:auto;white-space:pre-wrap}
+.strategy-doc-formula code{font:600 .9rem/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#324138}
+.strategy-theory-callout{padding:.8rem 0 .8rem 1rem;border-left:3px solid rgba(179,132,47,.55);color:#4d4b3f!important}
+.strategy-reference-list{margin:.5rem 0 0;padding-left:1.25rem;display:grid;gap:.85rem}
+.strategy-reference-list li{padding-left:.2rem;line-height:1.45;color:#55584f}
+.strategy-reference-list a{font-weight:800;color:#3f5c46;text-decoration-thickness:1px;text-underline-offset:3px}
+.strategy-reference-list span{display:block;margin-top:.2rem;font-size:.83rem;color:#74766d}
+.strategy-doc-closing{border-bottom:1px solid rgba(42,44,39,.14)}
+.strategy-fallback{padding:28px 0;border-top:1px solid rgba(42,44,39,.14)}
+@media(max-width:900px){.strategy-document{max-width:none}.strategy-toc{top:0}.strategy-doc-section{scroll-margin-top:80px}}
+@media(max-width:700px){.strategy-doc-intro p,.strategy-doc-section p{font-size:.93rem}.strategy-toc{margin-left:-16px;margin-right:-16px;padding-left:16px;padding-right:16px}}
