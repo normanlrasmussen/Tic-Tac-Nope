@@ -4,13 +4,17 @@
   const T = global.TTNTheory;
   if (!T) return;
 
+  // The core UI initializes against IDs it already knows. The new Uniform
+  // Thompson ID is inserted immediately after core initialization so it can be
+  // a first-class play/simulation strategy without breaking that bootstrap.
+  const uniformThompsonStrategy = { id: 'thompson_uniform', name: 'Uniform Thompson Sampling', family: 'Uniform probability matching', play: true, sim: true };
+
   // Research-facing strategy set. Softmax and the deterministic modal projection
   // are intentionally removed: neither adds a distinct game-theoretic guarantee.
   const activeStrategies = [
     { id: 'belief', name: 'Belief-State Search', family: 'Information-safe belief heuristic', play: true, sim: true },
     { id: 'nash', name: 'Regret-Matched Behavioral (MCCFR)', family: 'Regret-minimizing behavioral strategy', play: true, sim: true },
     { id: 'robust', name: 'Worst-Case Assumption', family: 'Ambiguity-averse heuristic', play: true, sim: true },
-    { id: 'thompson_uniform', name: 'Uniform Thompson Sampling', family: 'Uniform probability matching', play: true, sim: true },
     { id: 'thompson', name: 'Regret-Weighted Thompson Sampling', family: 'Policy-weighted probability matching', play: true, sim: true },
     { id: 'random', name: 'Uniform Random', family: 'Baseline', play: true, sim: true },
     { id: 'oracle', name: 'Omniscient Oracle', family: 'Cheating benchmark', play: false, sim: true }
@@ -33,9 +37,6 @@
     if (!actions.length) return [];
     if (!solver) return actions.map((move) => ({ move, prob: 1 / actions.length }));
 
-    // Do not create millions of new MCCFR nodes just to evaluate a rollout.
-    // If training never reached this information set, use an explicit uniform
-    // fallback rather than mutating the learned table during evaluation.
     const key = T.informationKey(state, rules, state.turn);
     const node = solver.nodes.get(key);
     if (!node) return actions.map((move) => ({ move, prob: 1 / actions.length }));
@@ -93,17 +94,6 @@
     const actions = commonInformationSetActions(beliefs, rules, player);
     if (!actions.length) return null;
 
-    // Every currently compatible history is evaluated. Future play never gets
-    // the hidden board: each hypothetical state is continued by a policy keyed
-    // only by the future acting player's own observation history. Both obsO and
-    // obsX remain in the hypothetical state, so each player keeps its own
-    // information state as the tree evolves.
-    //
-    // Exhaustive full-game continuation would effectively re-solve the entire
-    // imperfect-information game at every move. Instead we use bounded Monte
-    // Carlo continuation under the learned legal behavioral policy. The budget
-    // is distributed across all compatible histories, with at least one rollout
-    // per history, so no current possibility is silently discarded.
     const repetitions = Math.max(1, Math.ceil(BELIEF_ROLLOUT_TARGET / beliefs.length));
     let bestMove = null;
     let bestScore = -Infinity;
@@ -265,6 +255,15 @@
     }
   };
 
+  function installStrategyOption(select, strategy, beforeId = null) {
+    if (!select || [...select.options].some((o) => o.value === strategy.id)) return;
+    const option = document.createElement('option');
+    option.value = strategy.id;
+    option.textContent = `${strategy.name} · ${strategy.family}`;
+    const before = beforeId ? [...select.options].find((o) => o.value === beforeId) : null;
+    if (before) select.insertBefore(option, before); else select.appendChild(option);
+  }
+
   function renderQuickOverride() {
     const select = document.getElementById('ai-strategy');
     const target = document.getElementById('strategy-quick');
@@ -276,6 +275,13 @@
 
   global.TTNResearchUpdate = {
     afterCore() {
+      if (!T.STRATEGIES.some((s) => s.id === uniformThompsonStrategy.id)) {
+        const weightedIndex = T.STRATEGIES.findIndex((s) => s.id === 'thompson');
+        T.STRATEGIES.splice(weightedIndex >= 0 ? weightedIndex : T.STRATEGIES.length, 0, uniformThompsonStrategy);
+      }
+      installStrategyOption(document.getElementById('ai-strategy'), uniformThompsonStrategy, 'thompson');
+      installStrategyOption(document.getElementById('sim-o'), uniformThompsonStrategy, 'thompson');
+      installStrategyOption(document.getElementById('sim-x'), uniformThompsonStrategy, 'thompson');
       renderQuickOverride();
       const select = document.getElementById('ai-strategy');
       if (select) select.addEventListener('change', renderQuickOverride);
