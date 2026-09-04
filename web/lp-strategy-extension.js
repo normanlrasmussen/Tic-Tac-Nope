@@ -1,71 +1,185 @@
 (function () {
   'use strict';
 
+  const T = window.TTNTheory;
+  if (!T) return;
+
+  const ID = 'lp';
   const NAME = 'Exact Nash (Sequence-Form LP)';
   const DETAIL_URL = './strategy-lp.html';
+  const MANIFEST_URL = './equilibria/manifest.json';
+  const artifacts = new Map();
+  let manifest = { artifacts: [] };
 
-  function addDisabledSelectorOption(id) {
-    const select = document.getElementById(id);
-    if (!select || select.querySelector('option[value="lp"]')) return;
-    const option = document.createElement('option');
-    option.value = 'lp';
-    option.disabled = true;
-    option.textContent = `${NAME} · offline exact benchmark`;
-    select.appendChild(option);
+  const lpStrategy = { id: ID, name: NAME, family: 'Certified sequence-form equilibrium', play: true, sim: false };
+  if (!T.STRATEGIES.some((s) => s.id === ID)) T.STRATEGIES.splice(1, 0, lpStrategy);
+
+  function symbol(player) { return player === T.O ? 'O' : 'X'; }
+  function configKey(mask, startPlayer) { return `${Number(mask)}|${symbol(startPlayer)}`; }
+
+  function selectedConfiguration() {
+    let mask = 0;
+    document.querySelectorAll('#hidden-picker .picker-cell.selected').forEach((cell, index) => {
+      // Picker cells are rendered in board order and remain in the DOM in that order.
+      mask |= (1 << index);
+    });
+    const opponentOpens = document.querySelector('[data-order="second"]')?.classList.contains('active');
+    return { mask, startPlayer: opponentOpens ? T.X : T.O };
+  }
+
+  function artifactForRules(rules) {
+    return artifacts.get(configKey(rules.hiddenMask, rules.startPlayer)) || null;
+  }
+
+  function exactPolicy(state, rules) {
+    const artifact = artifactForRules(rules);
+    if (!artifact || !artifact.numericallySolved) return [];
+    const player = state.turn;
+    const key = T.informationKey(state, rules, player);
+    const table = artifact.policy?.[symbol(player)]?.[key];
+    const legal = T.legalActions(state, rules, player);
+    if (!table) {
+      // Exported artifacts intentionally omit zero-own-reach information sets.
+      // Such a state cannot be reached while this player follows its realization plan.
+      return legal.map((move) => ({ move, prob: 1 / Math.max(1, legal.length) }));
+    }
+    const policy = legal.map((move) => ({ move, prob: Math.max(0, Number(table[String(move)]) || 0) }));
+    const total = policy.reduce((sum, item) => sum + item.prob, 0);
+    if (!(total > 0)) return legal.map((move) => ({ move, prob: 1 / Math.max(1, legal.length) }));
+    return policy.map((item) => ({ ...item, prob: item.prob / total }));
+  }
+
+  function sample(policy, rng = Math.random) {
+    if (!policy.length) return null;
+    let draw = rng();
+    for (const item of policy) {
+      draw -= item.prob;
+      if (draw <= 0) return item.move;
+    }
+    return policy[policy.length - 1].move;
+  }
+
+  const originalChoose = T.chooseStrategy;
+  T.chooseStrategy = function chooseWithExactLP(id, context) {
+    if (id !== ID) return originalChoose(id, context);
+    const policy = exactPolicy(context.state, context.rules);
+    if (!policy.length) throw new Error('No certified sequence-form LP artifact is loaded for this game configuration.');
+    return sample(policy, context.rng || Math.random);
+  };
+
+  const originalEvaluate = T.evaluateStrategy;
+  T.evaluateStrategy = function evaluateWithExactLP(id, context, options = {}) {
+    if (id !== ID) return originalEvaluate(id, context, options);
+    const artifact = artifactForRules(context.rules);
+    const policy = exactPolicy(context.state, context.rules);
+    if (!artifact || !policy.length) {
+      return {
+        id: ID, name: NAME, metric: 'unavailable', metricLabel: 'Exact artifact unavailable',
+        scaleLabel: 'offline solve required', rows: [], policy: [], bestMove: null, worlds: [],
+        detail: 'No certified full-game sequence-form artifact is loaded for this configuration.'
+      };
+    }
+    const rows = policy.map((item) => ({ move: item.move, score: item.prob, scaled: item.prob }))
+      .sort((a, b) => b.score - a.score || a.move - b.move);
+    return {
+      id: ID,
+      name: NAME,
+      metric: 'probability',
+      metricLabel: 'Exact equilibrium action probability',
+      scaleLabel: '0% never · 100% always',
+      rows,
+      policy,
+      bestMove: rows[0]?.move ?? null,
+      worlds: [],
+      detail: `Certified sequence-form policy · O value ${Number(artifact.valueO).toFixed(6)} · duality gap ${Number(artifact.dualityGap).toExponential(2)}`
+    };
+  };
+
+  T.exactLPPolicy = exactPolicy;
+  T.exactLPArtifactForRules = artifactForRules;
+
+  function optionFor(select) {
+    let option = select.querySelector('option[value="lp"]');
+    if (!option) {
+      option = document.createElement('option');
+      option.value = ID;
+      select.insertBefore(option, select.options[1] || null);
+    }
+    return option;
+  }
+
+  function refreshSelectors() {
+    const cfg = selectedConfiguration();
+    const available = artifacts.has(configKey(cfg.mask, cfg.startPlayer));
+    for (const id of ['ai-strategy', 'decision-strategy']) {
+      const select = document.getElementById(id);
+      if (!select) continue;
+      const option = optionFor(select);
+      option.disabled = !available;
+      option.textContent = available
+        ? `${NAME} · certified online policy`
+        : `${NAME} · exact artifact not generated for this setup`;
+      if (!available && select.value === ID) {
+        select.value = 'nash';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+    const note = document.getElementById('lp-online-status');
+    if (note) {
+      note.textContent = available
+        ? 'Certified exact LP policy loaded for the selected mystery cells and turn order. It is playable online by direct policy lookup.'
+        : 'No certified LP artifact is currently published for this exact mystery-cell / starting-player configuration.';
+    }
+  }
+
+  async function loadArtifacts() {
+    try {
+      const response = await fetch(MANIFEST_URL, { cache: 'no-cache' });
+      if (!response.ok) throw new Error(`manifest HTTP ${response.status}`);
+      manifest = await response.json();
+      const entries = Array.isArray(manifest.artifacts) ? manifest.artifacts : [];
+      await Promise.all(entries.map(async (entry) => {
+        try {
+          const result = await fetch(`./equilibria/${entry.file}`, { cache: 'force-cache' });
+          if (!result.ok) throw new Error(`HTTP ${result.status}`);
+          const artifact = await result.json();
+          if (!artifact.numericallySolved) return;
+          artifacts.set(configKey(artifact.hiddenMask, artifact.startPlayer === 'O' ? T.O : T.X), artifact);
+        } catch (error) {
+          console.warn('Failed to load exact LP artifact', entry, error);
+        }
+      }));
+    } catch (error) {
+      console.warn('Exact LP manifest unavailable', error);
+    }
+    refreshSelectors();
+    window.dispatchEvent(new CustomEvent('ttn-lp-artifacts-loaded', { detail: { count: artifacts.size } }));
   }
 
   function addStrategySection() {
     const root = document.getElementById('strategy-cards');
     if (!root || document.getElementById('strategy-lp')) return;
-
     const section = document.createElement('section');
     section.id = 'strategy-lp';
     section.className = 'strategy-doc-section';
     section.innerHTML = `
-      <header>
-        <p class="strategy-section-number">LP · EXACT EQUILIBRIUM FORMULATION</p>
-        <h2>${NAME}</h2>
-        <p class="strategy-doc-meta">Sequence-form linear programming · Offline exact benchmark</p>
-        <p class="strategy-verdict">The clean exact Nash formulation for the full two-player zero-sum perfect-recall game—when the complete sequence-form LP is actually solved.</p>
-      </header>
-
-      <h3>How it works</h3>
-      <p>A normal-form mixed strategy would assign probabilities to complete contingency plans and is far too large to enumerate. Sequence form instead assigns realization weights to a player's action sequences. For O, let <code>x</code> be the realization plan, <code>E x = e</code> the sequence-flow constraints, <code>F y = f</code> X's constraints, and <code>A</code> the sparse terminal-payoff matrix. O's minimax problem is converted to a linear program by dualizing X's inner minimization.</p>
-      <pre class="strategy-doc-formula"><code>maxₓ,ₚ  fᵀp
-s.t.   Ex = e,  x ≥ 0
-       Fᵀp ≤ Aᵀx</code></pre>
-      <p>The solved realization plan is converted back to the behavioral policy used by the game via <code>σ(a|I) = x(σ(I)a) / x(σ(I))</code> whenever the parent sequence has positive realization probability. Perfect recall is what makes this behavioral representation realization-equivalent to mixed play over complete plans.</p>
-
-      <h3>Assumptions about the players</h3>
-      <p><strong>Acting player.</strong> Both players are fully strategic expected-utility maximizers in the implemented finite zero-sum game and remember their own actions and observations.</p>
-      <p><strong>Opponent model.</strong> No fixed heuristic opponent is assumed. The LP solves the minimax interaction against the entire legal opponent strategy space represented by sequence form.</p>
-      <p><strong>Hidden information.</strong> Information sets come from the same observation histories used by Tic-Tac-Nope. The LP does not reveal the true hidden state to either player.</p>
-
-      <h3>Optimization objective</h3>
-      <p>Compute realization plans <code>x*</code> and <code>y*</code> whose expected zero-sum payoff equals the game value: neither player can improve by unilaterally switching to another legal strategy.</p>
-
-      <h3>Theoretical guarantees</h3>
-      <p><strong>Guarantee.</strong> If the complete unabstracted game tree is encoded correctly and both sequence-form LPs are solved to optimality, the resulting realization plans are a minimax/Nash equilibrium of Tic-Tac-Nope up to numerical LP tolerance. Strong LP duality supplies a direct lower/upper value certificate; the reported duality gap is the numerical equilibrium certificate.</p>
-      <p><strong>What it does not guarantee.</strong> “Exact” does not mean symbolic rational arithmetic: a floating-point LP is exact only within solver feasibility/optimality tolerances. Nash equilibrium also does not imply a unique equilibrium, a sequential-equilibrium refinement, or maximum exploitation of a known weak opponent.</p>
-
-      <h3>Why it is not a live browser opponent yet</h3>
-      <p>The sequence-form representation avoids the catastrophic normal-form strategy explosion, but it is still linear in the number of information sets and action sequences. The unabstracted Tic-Tac-Nope tree contains millions of histories for ordinary mystery-cell configurations, so building and solving the complete sparse LP on a phone is not a responsible interactive path. The repository therefore includes an offline HiGHS exporter. The website only calls an LP policy “exact Nash” after a full solved artifact with a value interval and duality gap exists; it never falls back to MCCFR while keeping the exact label.</p>
-
-      <h3>Relation to MCCFR</h3>
-      <p>MCCFR and sequence-form LP target the same Nash/minimax set under the game's finite two-player zero-sum perfect-recall assumptions. The difference is computational: MCCFR learns an approximate behavioral policy from sampled trajectories, while sequence-form LP solves a global sparse optimization problem and can provide an explicit optimality certificate. MCCFR remains the practical live equilibrium-seeking strategy; the LP is the exact benchmark.</p>
-
-      <p><a class="secondary-btn compact" href="${DETAIL_URL}">Open the full LP strategy page</a></p>`;
-
+      <header><p class="strategy-section-number">LP · CERTIFIED EQUILIBRIUM</p><h2>${NAME}</h2>
+      <p class="strategy-doc-meta">Sequence-form linear programming · Playable online when a certified artifact exists</p>
+      <p class="strategy-verdict">The exact Nash benchmark is solved offline once, then the website plays it online with instantaneous information-set policy lookups.</p></header>
+      <h3>How it works online</h3>
+      <p>The expensive step is the full sparse LP solve. That solve exports a compact behavioral policy table and its certificate. GitHub Pages serves the resulting JSON. During a game the browser computes the current information key, reads <code>σ*(a|I)</code>, and samples one action. No approximation or browser-side re-solving is introduced.</p>
+      <pre class="strategy-doc-formula"><code>offline:  max fᵀp  s.t. Ex=e, x≥0, Fᵀp≤Aᵀx
+online:   a ~ σ*(·|I)</code></pre>
+      <h3>Theoretical guarantee</h3>
+      <p>If the complete unabstracted game was encoded correctly and both LPs solved to optimality, the published realization plans are a minimax/Nash equilibrium up to numerical LP tolerance. The artifact records the O lower bound, O upper bound, and their duality gap.</p>
+      <p><strong>Availability rule.</strong> The website enables this strategy only when the exact selected mystery-cell configuration and starting player have a matching certified artifact. It never substitutes MCCFR under the LP name.</p>
+      <p id="lp-online-status">Checking published exact-policy artifacts…</p>
+      <p><a class="secondary-btn compact" href="${DETAIL_URL}">Full LP theory & guarantees</a></p>`;
     const closing = document.getElementById('strategy-interpretation');
-    if (closing) root.insertBefore(section, closing);
-    else root.appendChild(section);
-
+    if (closing) root.insertBefore(section, closing); else root.appendChild(section);
     const toc = root.querySelector('.strategy-toc');
     if (toc && !toc.querySelector('a[href="#strategy-lp"]')) {
-      const link = document.createElement('a');
-      link.href = '#strategy-lp';
-      link.textContent = NAME;
-      toc.appendChild(link);
+      const link = document.createElement('a'); link.href = '#strategy-lp'; link.textContent = NAME; toc.appendChild(link);
     }
   }
 
@@ -75,21 +189,17 @@ s.t.   Ex = e,  x ≥ 0
     const panel = document.createElement('section');
     panel.id = 'lp-analysis-benchmark';
     panel.className = 'panel analysis-training-panel';
-    panel.innerHTML = `
-      <div class="analysis-training-copy">
-        <p class="kicker">EXACT EQUILIBRIUM BENCHMARK</p>
-        <h2>${NAME}</h2>
-        <p class="muted">Sequence form turns the full imperfect-information minimax problem into a sparse LP. A solved full-game artifact would provide an equilibrium value interval and duality-gap certificate. It is intentionally not substituted with the browser MCCFR table when no exact artifact is loaded.</p>
-      </div>
-      <div class="analysis-training-metrics">
-        <span>Status <strong>offline solve</strong></span>
-        <a class="secondary-btn compact" href="${DETAIL_URL}">Theory & guarantees</a>
-      </div>`;
+    panel.innerHTML = `<div class="analysis-training-copy"><p class="kicker">EXACT EQUILIBRIUM BENCHMARK</p><h2>${NAME}</h2>
+      <p class="muted">Certified LP artifacts are precomputed and published with the static site. When the current setup has one, the exact strategy is enabled in Play and its local equilibrium probabilities appear in Analysis.</p></div>
+      <div class="analysis-training-metrics"><span>Mode <strong>precomputed exact policy</strong></span><a class="secondary-btn compact" href="${DETAIL_URL}">Theory & guarantees</a></div>`;
     section.parentNode.insertBefore(panel, section);
   }
 
-  addDisabledSelectorOption('ai-strategy');
-  addDisabledSelectorOption('decision-strategy');
   addStrategySection();
   addAnalysisBenchmarkPanel();
+  refreshSelectors();
+  document.getElementById('hidden-picker')?.addEventListener('click', () => setTimeout(refreshSelectors, 0));
+  document.getElementById('turn-order')?.addEventListener('click', () => setTimeout(refreshSelectors, 0));
+  document.getElementById('new-game')?.addEventListener('click', () => setTimeout(refreshSelectors, 0));
+  loadArtifacts();
 })();
