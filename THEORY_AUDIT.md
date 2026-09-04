@@ -4,11 +4,11 @@
 
 Tic-Tac-Nope is modeled as a finite, sequential, two-player, zero-sum extensive-form game with imperfect information and perfect recall. Legal strategies act only through a player's information state. The only strategy allowed to inspect the actual hidden state is the explicitly simulation-only **Omniscient Oracle** benchmark.
 
-The principal game-theoretic strategy is now named **Regret-Matched Behavioral (MCCFR)**. This name is deliberate: the deployed policy is a behavioral strategy \(\sigma_i(a\mid I)\), while outcome sampling is only the estimator used during training. The solver remains outcome-sampling Monte Carlo Counterfactual Regret Minimization (MCCFR), following the standard importance-weighted structure used by OpenSpiel.
+The principal game-theoretic strategy is **Regret-Matched Behavioral (MCCFR)**. This name is deliberate: the deployed policy is a behavioral strategy \(\sigma_i(a\mid I)\), while outcome sampling is only the estimator used during training. The solver remains outcome-sampling Monte Carlo Counterfactual Regret Minimization (MCCFR), following the standard importance-weighted structure used by OpenSpiel.
 
 The previous **Softmax Mixed** and deterministic **Extensive CFR (modal)** strategies have been removed from the active strategy set. Softmax added randomness without an equilibrium interpretation; the modal projection discarded strategically necessary randomization from the regret policy and therefore did not inherit the equilibrium guarantee.
 
-The revised **Belief-State Search** no longer hands future play to an omniscient continuation oracle. The revised **Regret-Weighted Thompson Sampling** no longer assigns equal probability to every compatible history; it uses reach probabilities under the learned regret behavioral policy as its reference history model.
+The revised **Belief-State Search** no longer hands future play to an omniscient continuation oracle. Both Thompson variants are intentionally retained: **Uniform Thompson Sampling** samples compatible histories uniformly, while **Regret-Weighted Thompson Sampling** samples them according to reach probabilities under the learned regret behavioral policy. Keeping both creates a clean ablation: the action-selection rule is the same, and only the hidden-history weighting model changes.
 
 ## 1. Formal game model
 
@@ -144,15 +144,27 @@ The new name is more precise. The inner adversary is the currently compatible hi
 
 It exactly optimizes its stated one-step worst-hidden-state objective but does not guarantee the extensive-form game value.
 
-### 4.4 Regret-Weighted Thompson Sampling
+### 4.4 Uniform Thompson Sampling
 
-The old Thompson implementation sampled
+Uniform Thompson samples
 
 \[
-h\sim\operatorname{Uniform}(I).
+h\sim\operatorname{Uniform}(I),
 \]
 
-The revised strategy uses policy-induced reach weights. For each compatible history `h`, replay the history from the root and compute its reach under the learned average regret behavioral policy:
+then chooses
+
+\[
+a^*=\arg\max_a V_{\text{oracle}}(T(h,a)).
+\]
+
+Every currently compatible full history receives probability \(1/|I|\). This is a deliberate possibility-model baseline, not automatically a Bayesian posterior. It is useful because it isolates the effect of Thompson-style scenario sampling without introducing an opponent-policy model into the history probabilities.
+
+Uniform Thompson has no Nash/minimax guarantee. Its principal modeling risk is that strategically implausible histories receive exactly as much probability as histories that a realistic opponent policy would make much more likely.
+
+### 4.5 Regret-Weighted Thompson Sampling
+
+For each compatible history `h`, replay the history from the root and compute its reach under the learned average regret behavioral policy:
 
 \[
 w(h)=\pi^{\bar\sigma_R}(h).
@@ -165,15 +177,41 @@ P_{\bar\sigma_R}(h\mid I)
 =\frac{w(h)}{\sum_{h'\in I}w(h')}.
 \]
 
-The strategy samples one compatible history from this distribution and then chooses the perfect-information oracle-best current action in that sampled history.
+The strategy samples one compatible history from this distribution and then uses the same current-action rule as Uniform Thompson:
 
-This is a more defensible Thompson-style baseline because the history distribution is tied to a strategic generative model rather than arbitrary equal weighting. However, it is Bayesian only conditional on accepting the learned regret policy as the model that generated prior behavior. If the real opponent behaves differently, the posterior-style weights can be wrong.
+\[
+a^*=\arg\max_a V_{\text{oracle}}(T(h,a)).
+\]
 
-#### Why not use Belief-State Search to create the Thompson distribution?
+This is a more strategically informed history model because its weights come from a behavioral generative policy rather than equal weighting. It is Bayesian only conditional on accepting the learned regret policy as the model that generated prior behavior. If the real opponent behaves differently, these posterior-style weights can be wrong.
 
-Belief-State Search is deterministic given its information set and rollout estimates; it is not itself a calibrated probability model over opponent actions or hidden histories. Turning its scores into probabilities would require an extra stochastic/noise model. That would recreate the same conceptual problem as the removed Softmax strategy: arbitrary score-to-probability randomization without a game-theoretic reason for those probabilities. The regret behavioral policy already supplies a coherent mixed reference policy, so it is the appropriate source.
+#### Why keep both Thompson variants?
 
-### 4.5 Uniform Random
+They form a controlled comparison. Both strategies:
+
+- use the same compatible-history set;
+- sample exactly one hidden history;
+- choose the perfect-information oracle-best current action in that sampled history.
+
+The only intended difference is the history distribution:
+
+\[
+P_U(h\mid I)=\frac1{|I|}
+\]
+
+versus
+
+\[
+P_R(h\mid I)\propto\pi^{\bar\sigma_R}(h).
+\]
+
+Therefore a systematic performance difference in simulation is evidence about the value of the weighting model, not about a different downstream decision rule. Uniform Thompson is the natural ablation/control for Regret-Weighted Thompson.
+
+#### Why not use Belief-State Search to create the weighted Thompson distribution?
+
+Belief-State Search is deterministic given its information set and rollout estimates; it is not itself a calibrated probability model over opponent actions or hidden histories. Turning its scores into probabilities would require an extra stochastic/noise model. That would recreate the same conceptual problem as the removed Softmax strategy: arbitrary score-to-probability randomization without a game-theoretic reason for those probabilities. The regret behavioral policy already supplies a coherent mixed reference policy, so it is the appropriate weighted source.
+
+### 4.6 Uniform Random
 
 \[
 \sigma(a\mid I)=1/|A(I)|.
@@ -181,7 +219,7 @@ Belief-State Search is deterministic given its information set and rollout estim
 
 A control strategy only. Randomness by itself is not equilibrium mixing.
 
-### 4.6 Omniscient Oracle
+### 4.7 Omniscient Oracle
 
 Exact perfect-information minimax on the actual hidden state. It is illegal under the imperfect-information game and remains simulation-only.
 
@@ -220,6 +258,7 @@ Round-robin results answer a matchup question, not a theorem question. Recommend
 - distinguish legal strategies from the Oracle benchmark;
 - use substantially more than 30 games when making performance claims about stochastic strategies;
 - report uncertainty or repeated seeds when comparing close scores;
+- use the Uniform-vs-Regret-Weighted Thompson comparison as an ablation of the history-weighting assumption;
 - do not infer Nash optimality from round-robin rank.
 
 ## 8. References
