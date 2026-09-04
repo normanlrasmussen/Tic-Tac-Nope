@@ -4,17 +4,15 @@
   const T = global.TTNTheory;
   if (!T) return;
 
-  // The core UI initializes against IDs it already knows. The new Uniform
-  // Thompson ID is inserted immediately after core initialization so it can be
-  // a first-class play/simulation strategy without breaking that bootstrap.
-  const uniformThompsonStrategy = { id: 'thompson_uniform', name: 'Uniform Thompson Sampling', family: 'Uniform probability matching', play: true, sim: true };
-
-  // Research-facing strategy set. Softmax and the deterministic modal projection
-  // are intentionally removed: neither adds a distinct game-theoretic guarantee.
+  // The core UI has a legacy `softmax` strategy slot hard-coded in its local
+  // description table. We reuse only that internal ID for Uniform Thompson so
+  // the core can initialize without adding a new unknown ID. The Softmax
+  // algorithm itself is retired and never executed by this research layer.
   const activeStrategies = [
     { id: 'belief', name: 'Belief-State Search', family: 'Information-safe belief heuristic', play: true, sim: true },
     { id: 'nash', name: 'Regret-Matched Behavioral (MCCFR)', family: 'Regret-minimizing behavioral strategy', play: true, sim: true },
     { id: 'robust', name: 'Worst-Case Assumption', family: 'Ambiguity-averse heuristic', play: true, sim: true },
+    { id: 'softmax', name: 'Uniform Thompson Sampling', family: 'Uniform probability matching', play: true, sim: true },
     { id: 'thompson', name: 'Regret-Weighted Thompson Sampling', family: 'Policy-weighted probability matching', play: true, sim: true },
     { id: 'random', name: 'Uniform Random', family: 'Baseline', play: true, sim: true },
     { id: 'oracle', name: 'Omniscient Oracle', family: 'Cheating benchmark', play: false, sim: true }
@@ -211,9 +209,9 @@
 
   T.chooseStrategy = function chooseResearchStrategy(name, context) {
     if (name === 'belief') return chooseBeliefStateSearch(context);
-    if (name === 'thompson_uniform') return chooseUniformThompson(context);
+    if (name === 'softmax' || name === 'thompson_uniform') return chooseUniformThompson(context);
     if (name === 'thompson') return chooseRegretWeightedThompson(context);
-    if (name === 'softmax' || name === 'extensive') throw new Error(`Retired strategy: ${name}`);
+    if (name === 'extensive') throw new Error(`Retired strategy: ${name}`);
     return originalChooseStrategy(name, context);
   };
 
@@ -232,6 +230,11 @@
       status: 'Worst-case heuristic',
       short: 'Chooses the action with the best outcome in the worst compatible hidden history.',
       formula: 'a* = arg maxₐ minₕ V_oracle(T(h,a))'
+    },
+    softmax: {
+      status: 'Uniform world sampling',
+      short: 'Samples each compatible hidden history with equal probability, then best-responds in that sampled world.',
+      formula: 'h ~ Uniform(I),  a* = arg maxₐ V_oracle(T(h,a))'
     },
     thompson_uniform: {
       status: 'Uniform world sampling',
@@ -255,15 +258,6 @@
     }
   };
 
-  function installStrategyOption(select, strategy, beforeId = null) {
-    if (!select || [...select.options].some((o) => o.value === strategy.id)) return;
-    const option = document.createElement('option');
-    option.value = strategy.id;
-    option.textContent = `${strategy.name} · ${strategy.family}`;
-    const before = beforeId ? [...select.options].find((o) => o.value === beforeId) : null;
-    if (before) select.insertBefore(option, before); else select.appendChild(option);
-  }
-
   function renderQuickOverride() {
     const select = document.getElementById('ai-strategy');
     const target = document.getElementById('strategy-quick');
@@ -275,13 +269,6 @@
 
   global.TTNResearchUpdate = {
     afterCore() {
-      if (!T.STRATEGIES.some((s) => s.id === uniformThompsonStrategy.id)) {
-        const weightedIndex = T.STRATEGIES.findIndex((s) => s.id === 'thompson');
-        T.STRATEGIES.splice(weightedIndex >= 0 ? weightedIndex : T.STRATEGIES.length, 0, uniformThompsonStrategy);
-      }
-      installStrategyOption(document.getElementById('ai-strategy'), uniformThompsonStrategy, 'thompson');
-      installStrategyOption(document.getElementById('sim-o'), uniformThompsonStrategy, 'thompson');
-      installStrategyOption(document.getElementById('sim-x'), uniformThompsonStrategy, 'thompson');
       renderQuickOverride();
       const select = document.getElementById('ai-strategy');
       if (select) select.addEventListener('change', renderQuickOverride);
