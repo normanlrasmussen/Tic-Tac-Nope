@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Exact Nash via sequence-form linear programming for Tic-Tac-Nope: formulation, assumptions, guarantees, and computational limits." />
+  <meta name="theme-color" content="#f7f3ea" />
+  <title>Exact Nash (Sequence-Form LP) · Tic-Tac-Nope</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./theme2.css" />
+  <link rel="stylesheet" href="./theme3.css" />
+  <link rel="stylesheet" href="./game-theory.css" />
+  <link rel="stylesheet" href="./strategy-detail.css" />
+</head>
+<body>
+  <header class="detail-topbar">
+    <a class="detail-brand" href="./index.html#strategies"><span>?</span><span>Tic-Tac-Nope</span></a>
+    <nav class="detail-nav" aria-label="Strategy detail navigation">
+      <a href="./index.html#play">Play</a>
+      <a href="./index.html#strategies">Strategy overview</a>
+      <a href="./index.html#simulate">Simulation</a>
+    </nav>
+  </header>
+
+  <main class="detail-shell">
+    <div class="detail-breadcrumb"><a href="./index.html#strategies">← Strategy overview</a><span>Sequence-form linear programming</span></div>
+
+    <section class="detail-hero">
+      <div>
+        <p class="eyebrow">EXACT EQUILIBRIUM FORMULATION</p>
+        <h1>Exact Nash (Sequence-Form LP)</h1>
+        <p class="detail-verdict">Solve the actual imperfect-information zero-sum game globally instead of learning toward equilibrium from sampled regret.</p>
+        <p class="lede">Sequence form compresses mixed strategies over enormous complete contingency plans into realization weights on action sequences. For finite two-player zero-sum games with perfect recall, the resulting minimax problem is a linear program.</p>
+      </div>
+      <div class="panel detail-formula-card">
+        <small>O'S SEQUENCE-FORM LP</small>
+        <div class="formula">max fᵀp &nbsp; s.t. &nbsp; Ex=e, x≥0, Fᵀp≤Aᵀx</div>
+        <span class="detail-legality">Offline exact benchmark</span>
+      </div>
+    </section>
+
+    <section class="detail-section">
+      <div class="detail-section-head"><p class="kicker">FROM MIXED TO BEHAVIORAL</p><h2>What the LP actually solves</h2></div>
+      <div class="detail-assumption-grid">
+        <article class="panel detail-assumption"><small>REALIZATION PLAN</small><p><strong>x</strong> and <strong>y</strong> assign probability mass to player action sequences. Flow constraints ensure the child sequence masses at an information set sum to the parent sequence mass.</p></article>
+        <article class="panel detail-assumption"><small>PAYOFF MATRIX</small><p><strong>A</strong> is sparse. Each terminal history contributes its O utility to the entry indexed by O's terminal sequence and X's terminal sequence.</p></article>
+        <article class="panel detail-assumption"><small>BEHAVIORAL POLICY</small><p>At a reached information set, recover local play with σ(a|I)=x(σ(I)a)/x(σ(I)). Perfect recall makes this realization-equivalent to the corresponding mixed strategy.</p></article>
+      </div>
+    </section>
+
+    <section class="detail-two-column">
+      <article class="panel detail-objective">
+        <p class="kicker">WHAT IT OPTIMIZES</p>
+        <h2>The global minimax value</h2>
+        <p>O maximizes the payoff it can guarantee against every legal X strategy; X symmetrically minimizes O's payoff. The two solved LPs provide lower and upper bounds on the same game value.</p>
+        <div class="formula">v = maxₓ minᵧ xᵀAy = minᵧ maxₓ xᵀAy</div>
+      </article>
+      <article class="panel detail-best">
+        <p class="kicker">WHY SEQUENCE FORM</p>
+        <h2>Avoid the normal-form explosion</h2>
+        <p>Normal form would need one variable per complete pure contingency plan. Sequence form instead scales with information sets and action sequences, which is exponentially smaller in many extensive-form games while remaining exact.</p>
+      </article>
+    </section>
+
+    <section class="detail-section">
+      <div class="detail-section-head"><p class="kicker">THEORETICAL STATUS</p><h2>What can you actually claim?</h2></div>
+      <div class="detail-guarantee-grid">
+        <article class="detail-guarantee good"><small>GUARANTEE</small><p>If the complete unabstracted Tic-Tac-Nope tree is encoded correctly and the LPs solve to optimality, the returned realization plans are a Nash/minimax equilibrium of the implemented finite two-player zero-sum perfect-recall game, up to numerical solver tolerance. Strong duality gives a direct value/optimality certificate.</p></article>
+        <article class="detail-guarantee caution"><small>DOES NOT GUARANTEE</small><p>A floating-point solve is not symbolic exact arithmetic. Nash need not be unique, need not be a sequential-equilibrium refinement, and need not maximize exploitation of a particular weak opponent. Any abstraction or pruning that changes the full game also changes the guarantee.</p></article>
+      </div>
+    </section>
+
+    <section class="detail-two-column">
+      <article class="panel">
+        <p class="kicker">COMPUTATIONAL PROFILE</p>
+        <h2>Why it is offline</h2>
+        <p>The full game still contains millions of histories for ordinary mystery-cell configurations. Sequence form removes the pure-plan explosion but still requires rows and columns for the game's information structure. Building that sparse LP on a mobile browser is not an appropriate live-game workload.</p>
+      </article>
+      <article class="panel">
+        <p class="kicker">CERTIFICATE</p>
+        <h2>What an exported solve records</h2>
+        <p>The repository solver exports both players' behavioral policies, the O value lower and upper bounds, the LP duality gap, game-tree counts, and solver status. The site should only label a loaded policy exact when that certificate accompanies the full solve.</p>
+      </article>
+    </section>
+
+    <section class="panel detail-vs-nash">
+      <p class="kicker">LP VS. MCCFR</p>
+      <h2>Same equilibrium target, different computational route</h2>
+      <p>MCCFR is the practical live strategy: it estimates counterfactual regret from sampled trajectories and approaches the Nash set asymptotically. Sequence-form LP is the exact benchmark: it solves the global minimax optimization directly and can expose an explicit duality-gap certificate. Comparing MCCFR exploitability to the LP solution is the cleanest way to demonstrate convergence.</p>
+    </section>
+
+    <section class="panel detail-best-answer">
+      <p class="kicker">BOTTOM LINE</p>
+      <h2>The strongest equilibrium statement on the site—conditional on completing the full LP solve.</h2>
+      <p>The implementation deliberately does not pretend that a finite MCCFR table is an LP solution. Until a full sequence-form artifact is generated for a configuration, this strategy remains an offline benchmark rather than a selectable live opponent.</p>
+    </section>
+  </main>
+</body>
+</html>
