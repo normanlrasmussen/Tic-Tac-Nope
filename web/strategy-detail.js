@@ -4,7 +4,7 @@
   const D = window.TTNStrategyData || {};
   const id = document.body.dataset.strategy;
   const d = D[id];
-  const order = ['belief','softmax','extensive','nash','robust','thompson','random','oracle'];
+  const order = ['belief','nash','robust','thompson','random','oracle'];
   if (!d) {
     document.getElementById('strategy-detail-root').innerHTML = '<section class="panel detail-error"><h1>Strategy not found</h1><a href="./index.html#strategies">Back to strategies</a></section>';
     return;
@@ -80,8 +80,8 @@
     </section>
 
     <section class="panel detail-vs-nash">
-      <p class="kicker">RELATION TO EQUILIBRIUM PLAY</p>
-      <h2>How this differs from the Nash-target strategy</h2>
+      <p class="kicker">RELATION TO REGRET / EQUILIBRIUM PLAY</p>
+      <h2>How this differs from the equilibrium-target strategy</h2>
       <p>${d.nash}</p>
     </section>
 
@@ -104,19 +104,18 @@
   function bottomLine(strategy) {
     return {
       nash: 'Best theoretical default for an unknown strategic opponent.',
-      belief: 'Strong local decision heuristic, but not a full-game equilibrium.',
-      softmax: 'Useful randomized behavior, but not strategic equilibrium mixing.',
-      extensive: 'Best for interpretation; use the mixed policy for security.',
-      robust: 'Best when hidden-state ambiguity—not opponent strategy—is the risk you care about.',
-      thompson: 'Best as a scenario-sampling baseline when probability matching is useful.',
+      belief: 'Information-safe and interpretable, but still a model-based heuristic.',
+      robust: 'Best when the risk you care about is the worst compatible hidden state.',
+      thompson: 'A stronger probability-matching baseline when regret-policy reach is a useful history model.',
       random: 'Best as a control group.',
       oracle: 'Best only as an information-advantaged benchmark.'
     }[strategy];
   }
 
   function bottomCopy(strategy) {
-    if (strategy === 'nash') return 'Among the legal strategies on this site, this is the one with the strongest standard game-theoretic guarantee. The important caveat is finite training: the algorithm targets equilibrium, but the current browser policy is an approximation rather than a certified exact Nash solution.';
+    if (strategy === 'nash') return 'This is already a genuine behavioral strategy: it stores and samples σ(a|I) directly. Outcome sampling is only the training estimator. Full-tree CFR would remove sampling variance per iteration but is much more expensive and is not required for the behavioral-strategy interpretation or convergence theorem.';
+    if (strategy === 'belief') return 'The revised version fixes the most important conceptual problem in the old heuristic: future continuation no longer receives the true hidden state. Its remaining limitations are the equal-weight current belief model, the chosen regret-policy continuation model, and finite rollout variance.';
     if (strategy === 'oracle') return 'Its exact perfect-information solution is useful scientifically, but it answers a different question because legal Tic-Tac-Nope players do not know the hidden state.';
-    return 'Whether it outperforms other methods in simulation depends on the opponent and the fog configuration. A high empirical win rate against one opponent is evidence about that matchup, not a universal optimality theorem.';
+    return 'Whether it outperforms another method in simulation depends on the opponent and fog configuration. A strong round-robin score is empirical matchup evidence, not a universal optimality theorem.';
   }
 })();
