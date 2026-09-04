@@ -16,9 +16,12 @@
     if (target) target.click();
   }
 
-  loadScript('./app4-core.js', () => {
-    loadScript('./strategy-data.js', () => {
-      loadScript('./strategy-guide.js', openHashPage);
+  loadScript('./strategy-research-update.js', () => {
+    loadScript('./app4-core.js', () => {
+      if (window.TTNResearchUpdate?.afterCore) window.TTNResearchUpdate.afterCore();
+      loadScript('./strategy-data.js', () => {
+        loadScript('./strategy-guide.js', openHashPage);
+      });
     });
   });
 
