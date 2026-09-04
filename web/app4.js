@@ -24,7 +24,9 @@
         loadScript('./round-robin-controls.js', () => {
           if (window.TTNRoundRobinControls?.install) window.TTNRoundRobinControls.install();
           loadScript('./strategy-data.js', () => {
-            loadScript('./strategy-guide.js', openHashPage);
+            loadScript('./strategy-guide.js', () => {
+              loadScript('./lp-strategy-extension.js', openHashPage);
+            });
           });
         });
       });
