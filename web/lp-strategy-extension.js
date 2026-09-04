@@ -19,9 +19,9 @@
 
   function selectedConfiguration() {
     let mask = 0;
-    document.querySelectorAll('#hidden-picker .picker-cell.selected').forEach((cell, index) => {
-      // Picker cells are rendered in board order and remain in the DOM in that order.
-      mask |= (1 << index);
+    document.querySelectorAll('#hidden-picker .picker-cell.selected').forEach((cell) => {
+      const move = Number.parseInt(cell.textContent, 10) - 1;
+      if (Number.isInteger(move) && move >= 0 && move < 9) mask |= (1 << move);
     });
     const opponentOpens = document.querySelector('[data-order="second"]')?.classList.contains('active');
     return { mask, startPlayer: opponentOpens ? T.X : T.O };
@@ -39,8 +39,6 @@
     const table = artifact.policy?.[symbol(player)]?.[key];
     const legal = T.legalActions(state, rules, player);
     if (!table) {
-      // Exported artifacts intentionally omit zero-own-reach information sets.
-      // Such a state cannot be reached while this player follows its realization plan.
       return legal.map((move) => ({ move, prob: 1 / Math.max(1, legal.length) }));
     }
     const policy = legal.map((move) => ({ move, prob: Math.max(0, Number(table[String(move)]) || 0) }));
@@ -167,9 +165,8 @@
       <p class="strategy-doc-meta">Sequence-form linear programming · Playable online when a certified artifact exists</p>
       <p class="strategy-verdict">The exact Nash benchmark is solved offline once, then the website plays it online with instantaneous information-set policy lookups.</p></header>
       <h3>How it works online</h3>
-      <p>The expensive step is the full sparse LP solve. That solve exports a compact behavioral policy table and its certificate. GitHub Pages serves the resulting JSON. During a game the browser computes the current information key, reads <code>σ*(a|I)</code>, and samples one action. No approximation or browser-side re-solving is introduced.</p>
-      <pre class="strategy-doc-formula"><code>offline:  max fᵀp  s.t. Ex=e, x≥0, Fᵀp≤Aᵀx
-online:   a ~ σ*(·|I)</code></pre>
+      <p>The expensive step is the full sparse LP solve. That solve exports a behavioral policy table and its certificate. GitHub Pages serves the resulting JSON. During a game the browser computes the current information key, reads <code>σ*(a|I)</code>, and samples one action. No approximation or browser-side re-solving is introduced.</p>
+      <pre class="strategy-doc-formula"><code>offline:  max fᵀp  s.t. Ex=e, x≥0, Fᵀp≤Aᵀx\nonline:   a ~ σ*(·|I)</code></pre>
       <h3>Theoretical guarantee</h3>
       <p>If the complete unabstracted game was encoded correctly and both LPs solved to optimality, the published realization plans are a minimax/Nash equilibrium up to numerical LP tolerance. The artifact records the O lower bound, O upper bound, and their duality gap.</p>
       <p><strong>Availability rule.</strong> The website enables this strategy only when the exact selected mystery-cell configuration and starting player have a matching certified artifact. It never substitutes MCCFR under the LP name.</p>
