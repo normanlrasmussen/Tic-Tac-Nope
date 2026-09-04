@@ -4,7 +4,7 @@
   const D = window.TTNStrategyData || {};
   const id = document.body.dataset.strategy;
   const d = D[id];
-  const order = ['belief','nash','robust','thompson','random','oracle'];
+  const order = ['belief','nash','robust','thompson_uniform','thompson','random','oracle'];
   if (!d) {
     document.getElementById('strategy-detail-root').innerHTML = '<section class="panel detail-error"><h1>Strategy not found</h1><a href="./index.html#strategies">Back to strategies</a></section>';
     return;
@@ -106,7 +106,8 @@
       nash: 'Best theoretical default for an unknown strategic opponent.',
       belief: 'Information-safe and interpretable, but still a model-based heuristic.',
       robust: 'Best when the risk you care about is the worst compatible hidden state.',
-      thompson: 'A stronger probability-matching baseline when regret-policy reach is a useful history model.',
+      thompson_uniform: 'The clean baseline for measuring the effect of Thompson-style world sampling.',
+      thompson: 'Tests whether strategic reach weighting improves Thompson-style world sampling.',
       random: 'Best as a control group.',
       oracle: 'Best only as an information-advantaged benchmark.'
     }[strategy];
@@ -115,6 +116,8 @@
   function bottomCopy(strategy) {
     if (strategy === 'nash') return 'This is already a genuine behavioral strategy: it stores and samples σ(a|I) directly. Outcome sampling is only the training estimator. Full-tree CFR would remove sampling variance per iteration but is much more expensive and is not required for the behavioral-strategy interpretation or convergence theorem.';
     if (strategy === 'belief') return 'The revised version fixes the most important conceptual problem in the old heuristic: future continuation no longer receives the true hidden state. Its remaining limitations are the equal-weight current belief model, the chosen regret-policy continuation model, and finite rollout variance.';
+    if (strategy === 'thompson_uniform') return 'This version deliberately keeps the simple uniform assumption. Its value is experimental clarity: comparing it with Regret-Weighted Thompson isolates whether strategic history weighting helps beyond scenario sampling itself.';
+    if (strategy === 'thompson') return 'This version changes only the history distribution relative to Uniform Thompson. That makes the pair especially useful in round-robin experiments because any systematic performance difference can be attributed to the weighting model rather than to a different action-selection rule.';
     if (strategy === 'oracle') return 'Its exact perfect-information solution is useful scientifically, but it answers a different question because legal Tic-Tac-Nope players do not know the hidden state.';
     return 'Whether it outperforms another method in simulation depends on the opponent and fog configuration. A strong round-robin score is empirical matchup evidence, not a universal optimality theorem.';
   }
