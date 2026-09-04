@@ -1,5 +1,6 @@
 name: Build exact LP equilibria
 
+# Publishes certified policy tables that the static GitHub Pages app can play online.
 on:
   push:
     branches: [main]
