@@ -10,6 +10,7 @@
     { id: 'belief', name: 'Belief-State Search', family: 'Information-safe belief heuristic', play: true, sim: true },
     { id: 'nash', name: 'Regret-Matched Behavioral (MCCFR)', family: 'Regret-minimizing behavioral strategy', play: true, sim: true },
     { id: 'robust', name: 'Worst-Case Assumption', family: 'Ambiguity-averse heuristic', play: true, sim: true },
+    { id: 'thompson_uniform', name: 'Uniform Thompson Sampling', family: 'Uniform probability matching', play: true, sim: true },
     { id: 'thompson', name: 'Regret-Weighted Thompson Sampling', family: 'Policy-weighted probability matching', play: true, sim: true },
     { id: 'random', name: 'Uniform Random', family: 'Baseline', play: true, sim: true },
     { id: 'oracle', name: 'Omniscient Oracle', family: 'Cheating benchmark', play: false, sim: true }
@@ -127,6 +128,28 @@
     return bestMove;
   }
 
+  function chooseOracleBestInWorld(world, rules, player) {
+    let bestMove = null;
+    let bestValue = -Infinity;
+    for (const move of T.legalActions(world, rules, player)) {
+      const child = T.applyAction(world, rules, move);
+      const value = T.oracleValue(child, rules, player);
+      if (value > bestValue || (value === bestValue && (bestMove === null || move < bestMove))) {
+        bestValue = value;
+        bestMove = move;
+      }
+    }
+    return bestMove;
+  }
+
+  function chooseUniformThompson(context) {
+    const { state, rules, beliefs, rng = Math.random } = context;
+    const player = state.turn;
+    if (!beliefs || !beliefs.length) return T.legalActions(state, rules, player)[0] ?? null;
+    const world = beliefs[Math.floor(rng() * beliefs.length)];
+    return chooseOracleBestInWorld(world, rules, player);
+  }
+
   function splitObservationTokens(obs) {
     return String(obs || '').split(';').filter(Boolean);
   }
@@ -177,7 +200,7 @@
     if (!finite.length) return beliefs[Math.floor(rng() * beliefs.length)];
     const maxLog = Math.max(...finite);
     const weights = logs.map((x) => Number.isFinite(x) ? Math.exp(x - maxLog) : 0);
-    let total = weights.reduce((a, b) => a + b, 0);
+    const total = weights.reduce((a, b) => a + b, 0);
     if (!(total > 0)) return beliefs[Math.floor(rng() * beliefs.length)];
     let draw = rng() * total;
     for (let i = 0; i < beliefs.length; i++) {
@@ -193,22 +216,12 @@
     if (!beliefs || !beliefs.length) return T.legalActions(state, rules, player)[0] ?? null;
     const world = sampleRegretWeightedWorld(beliefs, rules, solver, rng);
     if (!world) return null;
-
-    let bestMove = null;
-    let bestValue = -Infinity;
-    for (const move of T.legalActions(world, rules, player)) {
-      const child = T.applyAction(world, rules, move);
-      const value = T.oracleValue(child, rules, player);
-      if (value > bestValue || (value === bestValue && (bestMove === null || move < bestMove))) {
-        bestValue = value;
-        bestMove = move;
-      }
-    }
-    return bestMove;
+    return chooseOracleBestInWorld(world, rules, player);
   }
 
   T.chooseStrategy = function chooseResearchStrategy(name, context) {
     if (name === 'belief') return chooseBeliefStateSearch(context);
+    if (name === 'thompson_uniform') return chooseUniformThompson(context);
     if (name === 'thompson') return chooseRegretWeightedThompson(context);
     if (name === 'softmax' || name === 'extensive') throw new Error(`Retired strategy: ${name}`);
     return originalChooseStrategy(name, context);
@@ -229,6 +242,11 @@
       status: 'Worst-case heuristic',
       short: 'Chooses the action with the best outcome in the worst compatible hidden history.',
       formula: 'a* = arg maxₐ minₕ V_oracle(T(h,a))'
+    },
+    thompson_uniform: {
+      status: 'Uniform world sampling',
+      short: 'Samples each compatible hidden history with equal probability, then best-responds in that sampled world.',
+      formula: 'h ~ Uniform(I),  a* = arg maxₐ V_oracle(T(h,a))'
     },
     thompson: {
       status: 'Policy-weighted sampling',
