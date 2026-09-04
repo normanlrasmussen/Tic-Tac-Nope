@@ -14,14 +14,14 @@
     document.head.appendChild(link);
   }
 
-  const order = ['belief','softmax','extensive','nash','robust','thompson','random','oracle'];
+  const order = ['belief','nash','robust','thompson','random','oracle'];
   const route = (id) => `./strategy-${id}.html`;
 
   const pageHead = document.querySelector('#page-strategies .page-head');
   const title = pageHead?.querySelector('h1');
   const lede = pageHead?.querySelector('.lede');
   if (title) title.textContent = 'Strategy overview';
-  if (lede) lede.textContent = 'Start here for the big picture. Each strategy has its own page for assumptions, guarantees, failure modes, and the exact question it is designed to answer.';
+  if (lede) lede.textContent = 'Each method now answers a distinct theoretical question: belief-based exploitation, regret-minimizing equilibrium play, worst-case hidden-state protection, policy-weighted probability matching, a random control, or an information-advantaged oracle benchmark.';
 
   root.className = 'strategy-overview-grid';
 
@@ -29,15 +29,15 @@
     <article class="panel strategy-overview-best">
       <div>
         <p class="kicker">IS THERE A BEST?</p>
-        <h2>There is a best theoretical default — but not a universal winner.</h2>
-        <p>If “best” means <strong>hardest to exploit against an unknown strategic opponent</strong>, the answer is <strong>Equilibrium Mixed (MCCFR)</strong>. Its average behavioral strategy is the only legal method here with the standard two-player zero-sum equilibrium/minimax convergence guarantee.</p>
-        <p>If “best” means <strong>maximize score against one particular imperfect opponent</strong>, the answer can change. A more exploitative heuristic may earn more against predictable mistakes while sacrificing worst-case protection.</p>
+        <h2>There is one strongest theoretical default, but no strategy dominates every opponent.</h2>
+        <p>If “best” means <strong>hardest to exploit against an unknown strategic opponent</strong>, use <strong>Regret-Matched Behavioral (MCCFR)</strong>. It is the legal strategy here with the standard two-player zero-sum no-regret / Nash-minimax convergence result.</p>
+        <p>If “best” means <strong>maximize score against one particular imperfect opponent</strong>, a model-based heuristic can do better by exploiting that opponent. That extra payoff is opponent-dependent and comes without the same worst-case security.</p>
       </div>
       <div class="overview-best-cases">
-        <span><b>Unknown strategic opponent</b>Equilibrium Mixed</span>
-        <span><b>Readable aggressive baseline</b>Belief Search</span>
-        <span><b>Worst hidden-state protection</b>Robust Maximin</span>
-        <span><b>Interpret the equilibrium</b>Extensive CFR (modal)</span>
+        <span><b>Unknown strategic opponent</b>Regret-Matched Behavioral</span>
+        <span><b>Belief-based exploitation</b>Belief-State Search</span>
+        <span><b>Worst hidden-state protection</b>Worst-Case Assumption</span>
+        <span><b>Probability matching</b>Regret-Weighted Thompson</span>
       </div>
     </article>`;
 
@@ -66,11 +66,13 @@
 
   const compare = `
     <article class="panel overview-compare-panel">
-      <div><p class="kicker">ONE-MINUTE COMPARISON</p><h2>What changes from strategy to strategy?</h2></div>
+      <div><p class="kicker">ONE-MINUTE COMPARISON</p><h2>What is each method actually assuming?</h2></div>
       <div class="overview-compare-grid">
-        <div><strong>Belief Search / Softmax / Thompson</strong><span>Use an equal-weight set of compatible histories.</span></div>
-        <div><strong>Robust Maximin</strong><span>Refuses probabilities and protects the worst compatible history.</span></div>
-        <div><strong>Extensive CFR / MCCFR</strong><span>Use the full observation-history information sets; strategic reach is learned through self-play.</span></div>
+        <div><strong>Belief-State Search</strong><span>Equal-weights every currently compatible history, then evaluates legal future play without revealing the hidden board.</span></div>
+        <div><strong>Worst-Case Assumption</strong><span>Refuses current-history probabilities and protects against the worst compatible hidden history.</span></div>
+        <div><strong>Regret-Matched Behavioral</strong><span>Learns strategic behavioral probabilities at information sets through counterfactual regret minimization.</span></div>
+        <div><strong>Regret-Weighted Thompson</strong><span>Uses the regret policy as a generative model to weight compatible histories, then samples one history.</span></div>
+        <div><strong>Uniform Random</strong><span>Uses no strategic model and exists as a control.</span></div>
         <div><strong>Oracle</strong><span>Sees hidden truth and therefore solves a different, easier information problem.</span></div>
       </div>
     </article>`;
@@ -81,41 +83,39 @@
   const audit = mixed?.nextElementSibling;
   if (mixed?.classList.contains('theory-core')) {
     mixed.innerHTML = `<p class="kicker">HOW TO READ THE STRATEGIES</p>
-      <h2>Three questions separate almost every method.</h2>
+      <h2>Separate uncertainty about the world from strategic randomization.</h2>
       <div class="overview-principles">
-        <div><strong>1 · What does the player believe?</strong><span>Equal-weight histories, worst-case histories, learned strategic reach, or the true state?</span></div>
-        <div><strong>2 · What does it assume about the opponent?</strong><span>No model, an omniscient continuation oracle, or strategic self-play?</span></div>
-        <div><strong>3 · What guarantee matters?</strong><span>Local optimization, robustness to hidden states, or equilibrium security against opponent strategies?</span></div>
+        <div><strong>1 · Information set</strong><span>A legal action can depend only on what that player has observed. Keeping both players' observation histories prevents future-state leakage.</span></div>
+        <div><strong>2 · Belief versus behavior</strong><span>A distribution over hidden histories answers “what world might I be in?” A behavioral strategy σ(a|I) answers “how should I randomize at this information set?”</span></div>
+        <div><strong>3 · Guarantee</strong><span>Empirical round-robin strength is matchup evidence. No-regret convergence and minimax security are theoretical statements about the full strategic game.</span></div>
       </div>`;
   }
   if (audit?.classList.contains('theory-core')) audit.style.display = 'none';
 
   function shortAssumption(id) {
-    if (id === 'nash' || id === 'extensive') return 'Full information-set model';
-    if (id === 'robust') return 'Worst compatible history';
+    if (id === 'nash') return 'Perfect-recall information-set game';
+    if (id === 'belief') return 'Equal current histories + legal rollout model';
+    if (id === 'robust') return 'Worst compatible hidden history';
+    if (id === 'thompson') return 'Regret-policy reach as history model';
     if (id === 'oracle') return 'True hidden state is known';
-    if (id === 'random') return 'No strategic model';
-    return 'Equal-weight compatible histories';
+    return 'No strategic model';
   }
 
   function shortGuarantee(id) {
     if (id === 'nash') return 'Asymptotic Nash/minimax convergence';
-    if (id === 'belief' || id === 'robust') return 'Exact for its local objective only';
+    if (id === 'belief') return 'Information-safe rollout estimate';
+    if (id === 'robust') return 'Exact for its current worst-state objective';
+    if (id === 'thompson') return 'Probability matching for the reference distribution';
     if (id === 'oracle') return 'Exact perfect-information minimax';
-    if (id === 'softmax') return 'Valid full-support distribution';
-    if (id === 'extensive') return 'No equilibrium guarantee after taking the mode';
-    if (id === 'thompson') return 'Probability matching for chosen world model';
     return 'None beyond legal uniform play';
   }
 
   function shortBest(id) {
     return {
-      belief: 'Interpretability / exploitation',
-      softmax: 'Noisy bounded-rational play',
-      extensive: 'Explaining MCCFR preferences',
+      belief: 'Interpretable exploitation',
       nash: 'Unknown strategic opponents',
       robust: 'Ambiguity aversion',
-      thompson: 'Scenario-sampling exploration',
+      thompson: 'Policy-weighted scenario sampling',
       random: 'Experimental control',
       oracle: 'Information-value benchmark'
     }[id];
