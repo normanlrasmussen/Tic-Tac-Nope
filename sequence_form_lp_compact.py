@@ -22,6 +22,7 @@ from typing import Dict
 import numpy as np
 
 from sequence_form_lp import (
+    INFORMATION_MODEL,
     O,
     X,
     Rules,
@@ -112,6 +113,7 @@ def main() -> None:
         "schema": 2,
         "solver": "scipy.optimize.linprog(method='highs')",
         "game": "Tic-Tac-Nope",
+        "informationModel": INFORMATION_MODEL,
         "hidden": [move + 1 for move in args.hidden],
         "hiddenMask": hidden_mask,
         "startPlayer": args.start,
@@ -134,6 +136,7 @@ def main() -> None:
         "policy": {"O": policy_o, "X": policy_x},
         "notes": [
             "Complete unabstracted sequence-form LP; only the exported behavioral table is support-pruned.",
+            "Mystery-cell attempts reveal the actor's attempted location but not success/failure.",
             "Policy entries with zero parent realization are omitted because their behavioral completion does not affect the realization plan.",
             "A stable fallback at omitted information sets is realization-equivalent to this equilibrium strategy.",
             "Numerical LP solutions are exact only up to solver feasibility/optimality tolerances.",
