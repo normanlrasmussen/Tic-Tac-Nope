@@ -287,6 +287,7 @@ def main() -> None:
     EXACT_DIR.mkdir(parents=True, exist_ok=True)
     MCCFR_DIR.mkdir(parents=True, exist_ok=True)
     canonical_masks, _ = write_symmetry_map(args.mode)
+    canonical_masks.sort(key=lambda mask: (mask.bit_count(), mask))
     configurations = [(mask, start) for mask in canonical_masks for start in ("O", "X")]
 
     raw_count = 36 if args.mode == "two-hidden" else 502
@@ -295,6 +296,7 @@ def main() -> None:
         f"-> {len(configurations)} start-player configurations."
     )
     print(f"Solvers: {args.solvers}; MCCFR iterations/config: {args.mccfr_iterations:,}")
+    print("Order: increasing hidden-cell count, with both starters per mask.")
     print("Existing completed files will be skipped.\n")
 
     failures = []
