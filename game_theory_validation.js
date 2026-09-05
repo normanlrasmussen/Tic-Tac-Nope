@@ -7,6 +7,57 @@ const { O, X } = T;
 function assert(condition, message) { if (!condition) throw new Error(message); }
 function seeded(seed) { const rng = new T.RNG(seed); return () => rng.next(); }
 
+function hiddenInformationAudit() {
+  const rules = T.makeRules([1, 3], O);
+
+  // The same observed history can contain either a successful or failed own
+  // mystery attempt. Those histories must remain in one information set.
+  function history(opponentHiddenMove) {
+    let state = T.makeRoot(rules);
+    state = T.applyAction(state, rules, 0); // O visible cell 1.
+    state = T.applyAction(state, rules, opponentHiddenMove); // X acts in fog.
+    state = T.applyAction(state, rules, 1); // O attempts mystery cell 2.
+    state = T.applyAction(state, rules, 2); // X visible cell 3; O acts next.
+    return state;
+  }
+
+  const failedAttempt = history(1); // X actually owns cell 2.
+  const successfulAttempt = history(3); // X used the other mystery cell.
+  assert(T.boardArray(failedAttempt)[1] === X, 'fixture did not produce failed hidden attempt');
+  assert(T.boardArray(successfulAttempt)[1] === O, 'fixture did not produce successful hidden attempt');
+  assert(
+    T.informationKey(failedAttempt, rules, O) === T.informationKey(successfulAttempt, rules, O),
+    'success/failure leaked into the acting player information set'
+  );
+  assert(!failedAttempt.obsO.includes('S1;') && !failedAttempt.obsO.includes('F1;'), 'legacy S/F feedback token leaked into O observations');
+  assert(failedAttempt.obsO.includes('P1;'), 'own mystery-attempt location was not remembered');
+
+  // Exercise the belief tracker on the failed true history. O must preserve
+  // both ownership possibilities after receiving no result signal.
+  let state = T.makeRoot(rules);
+  const tracker = new T.BeliefTracker(rules);
+  for (const move of [0, 1, 1]) {
+    const before = state;
+    state = T.applyAction(state, rules, move);
+    tracker.advance(before, state);
+  }
+  const possibleOwners = new Set(tracker.for(O).map((world) => T.boardArray(world)[1]));
+  assert(possibleOwners.has(O) && possibleOwners.has(X), 'belief update revealed whether O\'s mystery attempt succeeded');
+
+  // If O is literally the first player to touch any mystery cell, success is
+  // inferable from the rules even though no explicit result signal is emitted.
+  state = T.makeRoot(rules);
+  const inferenceTracker = new T.BeliefTracker(rules);
+  const before = state;
+  state = T.applyAction(state, rules, 1);
+  inferenceTracker.advance(before, state);
+  assert(state.obsO === 'P1;', 'first hidden attempt should record only the attempted location');
+  assert(
+    inferenceTracker.for(O).every((world) => T.boardArray(world)[1] === O),
+    'logically certain first hidden claim should remain inferable'
+  );
+}
+
 function structuralAudit() {
   const rules = T.makeRules([1, 3], O), rng = seeded(42), seen = new Map();
   for (let episode = 0; episode < 5000; episode++) {
@@ -120,6 +171,7 @@ function strategyPairSmokeAudit() {
   }
 }
 
+hiddenInformationAudit();
 structuralAudit();
 beliefAudit();
 solverAudit();
