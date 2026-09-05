@@ -7,6 +7,11 @@ built and HiGHS solves both players' sequence-form LPs, the exported realization
 plans form a Nash/minimax solution of the implemented two-player zero-sum
 perfect-recall game, up to numerical LP tolerance.
 
+Information model: a player observes the location of their own mystery-cell
+attempt, but does not receive a success/failure signal. An opponent mystery
+attempt is observed only as an anonymous fog action. Ownership can become known
+only when it is implied by the player's complete observation history.
+
 Example:
     python sequence_form_lp.py --hidden 2,4 --start O --output equilibrium.json
 
@@ -28,6 +33,7 @@ from scipy.sparse import coo_matrix, csr_matrix, hstack
 X, O = 1, 2
 FULL_MASK = 0x1FF
 WIN_MASKS = (0x007, 0x038, 0x1C0, 0x049, 0x092, 0x124, 0x111, 0x054)
+INFORMATION_MODEL = "hidden-attempt-location-no-result-v2"
 _WINS = tuple(any(mask & win == win for win in WIN_MASKS) for mask in range(512))
 _ACTIONS = tuple(tuple(i for i in range(9) if mask & (1 << i)) for mask in range(512))
 
@@ -142,7 +148,10 @@ def _apply_legal_action(state: State, rules: Rules, move: int) -> State:
             return f"V{actor}{move};"
         if viewer != actor:
             return "H;"
-        return f"{'S' if success else 'F'}{move};"
+        # The actor knows which mystery cell they attempted, but the game does
+        # not reveal whether that attempt succeeded. Success remains latent in
+        # the true state and may only be inferred from other observations.
+        return f"P{move};"
 
     return State(
         o_mask=o_mask,
@@ -412,6 +421,7 @@ def main() -> None:
         "schema": 1,
         "solver": "scipy.optimize.linprog(method='highs')",
         "game": "Tic-Tac-Nope",
+        "informationModel": INFORMATION_MODEL,
         "hidden": [move + 1 for move in args.hidden],
         "hiddenMask": hidden_mask,
         "startPlayer": args.start,
@@ -434,6 +444,7 @@ def main() -> None:
         },
         "notes": [
             "Policies are behavioral representations of sequence-form realization plans.",
+            "Mystery-cell attempts reveal the actor's attempted location but not success/failure.",
             "At zero-realization information sets, uniform probabilities are a realization-equivalent completion.",
             "The equilibrium claim applies only when the complete unabstracted tree is enumerated and the LPs solve successfully.",
             "Numerical LP solutions are exact only up to solver feasibility/optimality tolerances.",
