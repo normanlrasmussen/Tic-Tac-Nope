@@ -8,9 +8,52 @@ exact solves through the compact support-pruned sequence-form exporter.
 from __future__ import annotations
 
 import sys
+import json
+import math
+import re
 from pathlib import Path
 
 import precompute_all as batch
+
+_completed_this_run: set[Path] = set()
+
+
+def swap_players(artifact: dict) -> dict:
+    """Relabel an exact equilibrium under the O <-> X game isomorphism."""
+    if artifact.get("schema") != 2 or artifact.get("numericallySolved") is not True:
+        raise ValueError("A solved compact exact artifact is required")
+    start = artifact["startPlayer"]
+    if start not in ("O", "X"):
+        raise ValueError("Invalid starting player")
+    for field in ("valueO", "lowerBoundO", "upperBoundO", "dualityGap"):
+        if not math.isfinite(artifact[field]):
+            raise ValueError(f"Nonfinite {field}")
+    if artifact["lowerBoundO"] > artifact["upperBoundO"] + 1e-7:
+        raise ValueError("Invalid value interval")
+    swapped = dict(artifact)
+    swapped["startPlayer"] = "X" if start == "O" else "O"
+    swapped["valueO"] = -artifact["valueO"]
+    swapped["lowerBoundO"] = -artifact["upperBoundO"]
+    swapped["upperBoundO"] = -artifact["lowerBoundO"]
+    counts = dict(artifact["counts"])
+    for stem in ("informationSets", "sequences", "storedInformationSets"):
+        counts[stem + "O"], counts[stem + "X"] = counts[stem + "X"], counts[stem + "O"]
+    swapped["counts"] = counts
+    policies = {}
+    for player, target in (("O", "X"), ("X", "O")):
+        policy = {}
+        for key, probabilities in artifact["policy"][player].items():
+            actor, starter, mask, observations = key.split("|", 3)
+            if (actor != ("2" if player == "O" else "1")
+                    or starter != ("2" if start == "O" else "1")
+                    or int(mask) != artifact["hiddenMask"]):
+                raise ValueError("Inconsistent information key")
+            # Only public observations name the actor. S/F actions and H are unchanged.
+            observations = re.sub(r"V([12])", lambda m: "V" + str(3 - int(m[1])), observations)
+            policy[f"{3-int(actor)}|{3-int(starter)}|{mask}|{observations}"] = probabilities
+        policies[target] = policy
+    swapped["policy"] = policies
+    return swapped
 
 
 def solve_exact_compact(mask: int, start: str, node_limit: int, force: bool) -> Path:
@@ -18,6 +61,26 @@ def solve_exact_compact(mask: int, start: str, node_limit: int, force: bool) -> 
     if out.exists() and not force:
         print(f"SKIP exact  mask={mask:03d} start={start}  ({out.name} exists)")
         return out
+    counterpart = batch.EXACT_DIR / f"mask-{mask}-{'X' if start == 'O' else 'O'}.json"
+    if counterpart.exists() and (not force or counterpart in _completed_this_run):
+        try:
+            source = json.loads(counterpart.read_text(encoding="utf-8"))
+            if source["hiddenMask"] != mask or source["startPlayer"] == start:
+                raise ValueError("Counterpart configuration mismatch")
+            if source["hidden"] != batch.mask_cells(mask):
+                raise ValueError("Counterpart hidden cells mismatch")
+            if node_limit and source["counts"]["histories"] > node_limit:
+                raise ValueError("Counterpart exceeds requested node limit")
+            artifact = swap_players(source)
+        except (ValueError, KeyError, TypeError, AttributeError, OSError):
+            # An incompatible or incomplete counterpart never replaces a full solve.
+            pass
+        else:
+            from sequence_form_lp_compact import write_artifact
+            write_artifact(out, artifact)
+            _completed_this_run.add(out)
+            print(f"REUSE exact mask={mask:03d} start={start} (O/X relabeling of {counterpart.name})")
+            return out
     cells = ",".join(map(str, batch.mask_cells(mask)))
     command = [
         sys.executable,
@@ -29,6 +92,7 @@ def solve_exact_compact(mask: int, start: str, node_limit: int, force: bool) -> 
     if node_limit:
         command += ["--node-limit", str(node_limit)]
     batch.run_command(command)
+    _completed_this_run.add(out)
     return out
 
 

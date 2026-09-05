@@ -12,6 +12,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import tempfile
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Dict
 
@@ -27,6 +31,25 @@ from sequence_form_lp import (
     parse_hidden,
     solve_max_player,
 )
+
+
+def log_progress(message: str) -> None:
+    print(f"[{datetime.now().astimezone().isoformat(timespec='seconds')}] {message}", flush=True)
+
+
+def write_artifact(path: Path, artifact: dict) -> None:
+    """Publish only complete JSON, so an interrupted write remains resumable."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix=path.name + ".", suffix=".tmp", delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump(artifact, stream, separators=(",", ":"), allow_nan=False)
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def compact_behavioral_policy(
@@ -59,18 +82,26 @@ def main() -> None:
 
     hidden_mask = sum(bit(move) for move in args.hidden)
     rules = Rules(hidden_mask=hidden_mask, start_player=O if args.start == "O" else X)
-    print(f"Building exact sequence form for hidden={tuple(m + 1 for m in args.hidden)}, start={args.start}...")
+    started = time.perf_counter()
+    log_progress(f"Started enumeration for hidden={tuple(m + 1 for m in args.hidden)}, start={args.start}...")
     game = build_sequence_game(rules, node_limit=args.node_limit)
-    print(
+    log_progress(
+        f"Finished enumeration ({time.perf_counter() - started:.1f}s): "
         f"histories={game.histories:,}, terminals={game.terminals:,}, "
         f"O infos={len(game.o.infos):,}, X infos={len(game.x.infos):,}, "
         f"O sequences={game.o.n_sequences:,}, X sequences={game.x.n_sequences:,}"
     )
 
-    print("Solving O maximin LP...")
+    lp_started = time.perf_counter()
+    log_progress("Solving O maximin LP...")
     x_o, lower_o, result_o = solve_max_player(game.o, game.x, game.payoff)
-    print("Solving X maximin LP...")
+    log_progress(f"Solved O maximin LP ({time.perf_counter() - lp_started:.1f}s)")
+    x_started = time.perf_counter()
+    log_progress("Solving X maximin LP...")
     x_x, lower_x, result_x = solve_max_player(game.x, game.o, -game.payoff.T.tocsr())
+    log_progress(f"Solved X maximin LP ({time.perf_counter() - x_started:.1f}s)")
+    log_progress(f"Finished both LP solves ({time.perf_counter() - lp_started:.1f}s; "
+                 f"{time.perf_counter() - started:.1f}s since enumeration started)")
     upper_o = -lower_x
     gap = max(0.0, upper_o - lower_o)
     value = 0.5 * (lower_o + upper_o)
@@ -109,9 +140,8 @@ def main() -> None:
         ],
     }
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(artifact, separators=(",", ":")), encoding="utf-8")
-    print(f"Wrote {args.output} ({args.output.stat().st_size / 1024 / 1024:.2f} MiB)")
+    write_artifact(args.output, artifact)
+    log_progress(f"Wrote {args.output} ({args.output.stat().st_size / 1024 / 1024:.2f} MiB)")
     print(
         f"Stored support infos: O={len(policy_o):,}/{len(game.o.infos):,}, "
         f"X={len(policy_x):,}/{len(game.x.infos):,}"

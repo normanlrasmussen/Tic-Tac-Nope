@@ -28,6 +28,8 @@ from scipy.sparse import coo_matrix, csr_matrix, hstack
 X, O = 1, 2
 FULL_MASK = 0x1FF
 WIN_MASKS = (0x007, 0x038, 0x1C0, 0x049, 0x092, 0x124, 0x111, 0x054)
+_WINS = tuple(any(mask & win == win for win in WIN_MASKS) for mask in range(512))
+_ACTIONS = tuple(tuple(i for i in range(9) if mask & (1 << i)) for mask in range(512))
 
 
 def other(player: int) -> int:
@@ -39,6 +41,8 @@ def bit(move: int) -> int:
 
 
 def has_win(mask: int) -> bool:
+    if 0 <= mask <= FULL_MASK:
+        return _WINS[mask]
     return any(mask & win == win for win in WIN_MASKS)
 
 
@@ -90,22 +94,25 @@ def utility_o(state: State) -> float | None:
 def legal_actions(state: State, rules: Rules) -> Tuple[int, ...]:
     if terminal_winner(state) is not None:
         return ()
+    return _nonterminal_actions(state, rules)
+
+
+def _nonterminal_actions(state: State, rules: Rules) -> Tuple[int, ...]:
+    """Legal actions after the caller has established nonterminal status."""
     occ = occupied(state)
     tried = state.tried_o if state.turn == O else state.tried_x
-    out: List[int] = []
-    for move in range(9):
-        b = bit(move)
-        if rules.hidden_mask & b:
-            if not tried & b:
-                out.append(move)
-        elif not occ & b:
-            out.append(move)
-    return tuple(out)
+    available = ((rules.hidden_mask & ~tried) | (~rules.hidden_mask & ~occ)) & FULL_MASK
+    return _ACTIONS[available]
 
 
 def apply_action(state: State, rules: Rules, move: int) -> State:
     if move not in legal_actions(state, rules):
         raise ValueError(f"Illegal action {move} in {state}")
+    return _apply_legal_action(state, rules, move)
+
+
+def _apply_legal_action(state: State, rules: Rules, move: int) -> State:
+    """Internal transition for actions already checked by tree enumeration."""
 
     actor = state.turn
     b = bit(move)
@@ -258,20 +265,21 @@ def build_sequence_game(rules: Rules, node_limit: int = 0) -> SequenceGame:
         u = utility_o(state)
         if u is not None:
             terminals += 1
-            terminal_rows.append(seq_o)
-            terminal_cols.append(seq_x)
-            terminal_vals.append(u)
+            if u != 0.0:
+                terminal_rows.append(seq_o)
+                terminal_cols.append(seq_x)
+                terminal_vals.append(u)
             continue
 
-        actions = legal_actions(state, rules)
+        actions = _nonterminal_actions(state, rules)
         actor = state.turn
         key = information_key(state, rules, actor)
         catalog = cat_o if actor == O else cat_x
         parent = seq_o if actor == O else seq_x
         info = catalog.register(key, parent, actions)
 
-        for action, child_seq in reversed(tuple(zip(info.actions, info.child_sequences))):
-            child = apply_action(state, rules, action)
+        for action, child_seq in zip(reversed(info.actions), reversed(info.child_sequences)):
+            child = _apply_legal_action(state, rules, action)
             if actor == O:
                 stack.append((child, child_seq, seq_x))
             else:
@@ -283,6 +291,7 @@ def build_sequence_game(rules: Rules, node_limit: int = 0) -> SequenceGame:
         dtype=float,
     ).tocsr()
     payoff.sum_duplicates()
+    payoff.eliminate_zeros()
     return SequenceGame(rules, cat_o, cat_x, payoff, histories, terminals)
 
 
@@ -297,7 +306,7 @@ def solve_max_player(
     s.t. E x = e, x >= 0,
          F^T p <= A^T x.
 
-    p is unrestricted, represented as p+ - p-.
+    p is unrestricted. Native free bounds avoid duplicating its columns.
     """
     E, e = self_catalog.realization_matrix()
     F, f = opp_catalog.realization_matrix()
@@ -305,17 +314,20 @@ def solve_max_player(
     n_p = opp_catalog.n_constraints
 
     A_eq = hstack(
-        [E, csr_matrix((E.shape[0], 2 * n_p), dtype=float)],
+        [E, csr_matrix((E.shape[0], n_p), dtype=float)],
         format="csr",
     )
     b_eq = e
 
-    A_ub = hstack([-payoff_self.T, F.T, -F.T], format="csr")
+    A_ub = hstack([-payoff_self.T, F.T], format="csr")
     b_ub = np.zeros(opp_catalog.n_sequences, dtype=float)
 
-    c = np.zeros(n_x + 2 * n_p, dtype=float)
-    c[n_x : n_x + n_p] = -f
-    c[n_x + n_p :] = f
+    c = np.zeros(n_x + n_p, dtype=float)
+    c[n_x:] = -f
+    bounds = np.empty((n_x + n_p, 2), dtype=float)
+    bounds[:, 0] = 0.0
+    bounds[n_x:, 0] = -np.inf
+    bounds[:, 1] = np.inf
 
     result = linprog(
         c,
@@ -323,7 +335,7 @@ def solve_max_player(
         b_ub=b_ub,
         A_eq=A_eq,
         b_eq=b_eq,
-        bounds=(0.0, None),
+        bounds=bounds,
         method="highs",
         options={"presolve": True},
     )

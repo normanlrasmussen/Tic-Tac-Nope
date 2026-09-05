@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
@@ -31,6 +32,7 @@ ROOT = Path(__file__).resolve().parent
 WEB_EQ = ROOT / "web" / "equilibria"
 EXACT_DIR = WEB_EQ / "exact"
 MCCFR_DIR = WEB_EQ / "mccfr"
+_metadata_cache: Dict[Path, tuple] = {}
 
 
 # A transform maps an OLD board index -> transformed board index.
@@ -193,6 +195,13 @@ def solve_mccfr(mask: int, start: str, iterations: int, seed: int, force: bool) 
 
 
 def artifact_metadata(path: Path) -> dict:
+    # Policies can be large; each manifest rebuild only needs their small headers.
+    # Invalidate after either in-place writes or atomic replacement.
+    stat = path.stat()
+    signature = (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+    cached = _metadata_cache.get(path)
+    if cached is not None and cached[0] == signature:
+        return dict(cached[1])
     data = json.loads(path.read_text(encoding="utf-8"))
     result = {
         "file": path.relative_to(WEB_EQ).as_posix(),
@@ -213,7 +222,8 @@ def artifact_metadata(path: Path) -> dict:
             exploration=data.get("exploration"),
             informationSets=data.get("informationSets"),
         )
-    return result
+    _metadata_cache[path] = (signature, result)
+    return dict(result)
 
 
 def rebuild_manifest(mode: str) -> None:
@@ -273,6 +283,7 @@ def main() -> None:
     if args.solvers in ("both", "mccfr") and shutil.which("node") is None:
         parser.error("Node.js is required for MCCFR export but `node` was not found on PATH.")
 
+    print(f"[{datetime.now().astimezone().isoformat(timespec='seconds')}] Batch started", flush=True)
     EXACT_DIR.mkdir(parents=True, exist_ok=True)
     MCCFR_DIR.mkdir(parents=True, exist_ok=True)
     canonical_masks, _ = write_symmetry_map(args.mode)
@@ -313,7 +324,8 @@ def main() -> None:
     rebuild_manifest(args.mode)
     elapsed = time.time() - start_time
     print("=" * 72)
-    print(f"Finished in {elapsed / 60:.1f} minutes with {len(failures)} failed configuration(s).")
+    print(f"[{datetime.now().astimezone().isoformat(timespec='seconds')}] "
+          f"Finished in {elapsed / 60:.1f} minutes with {len(failures)} failed configuration(s).", flush=True)
     print(f"Saved outputs under: {WEB_EQ}")
     if failures:
         print(json.dumps(failures, indent=2))

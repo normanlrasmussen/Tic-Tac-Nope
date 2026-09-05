@@ -83,6 +83,52 @@ python sequence_form_lp.py \
 
 Use `--node-limit N` as a safety guard while testing the enumerator. A full equilibrium claim requires a complete traversal; hitting the node limit aborts the solve.
 
+### Faster resumable batch export
+
+```bash
+python precompute.py --mode all --solvers exact --keep-going
+```
+
+This command retains all 196 output configurations and the complete unabstracted
+game. It now avoids redundant work in several ways:
+
+- O/X relabeling requires only one tree build and two player LPs per board mask,
+  instead of rebuilding and solving both LPs for each starter. The other output
+  swaps player policies, player identifiers in observation keys, and player counts;
+  its O interval is `[-upperBoundO, -lowerBoundO]`. This is an exact symmetry of
+  the rules, not an approximation.
+- Win and action-mask lookup tables replace repeated scans. The enumerator applies
+  already-validated actions directly, retaining perfect-recall and legality checks
+  at information sets and the public transition API's input validation.
+- HiGHS uses native unrestricted bounds for the dual variables instead of doubled
+  positive/negative columns. Both player LPs still run with the same tolerances.
+- Zero payoff entries are omitted from sparse storage, while all terminal histories
+  are still enumerated and counted. Manifest rebuilds cache unchanged file metadata
+  rather than repeatedly decoding every policy.
+
+Existing outputs are skipped. A compatible completed counterpart can supply a missing
+starter output; otherwise the full solver runs. `--force` recomputes one starter and
+derives the other from that fresh result. `--node-limit` and `--keep-going` retain
+their behavior. Compact output files are published by atomic replacement so an
+interrupted write does not appear complete.
+
+Restart the command to use these changes in an already-running batch. Completed
+files remain reusable. An in-progress solve has no intermediate checkpoint.
+
+Validation: a full mask-3/O tree had identical catalogs and payoff entries across
+4,465,480 histories, with enumeration taking 50.8 seconds before and 26.6 seconds
+after in a local comparison (about 1.9x). This measures enumeration, not total batch
+runtime. LP regression tests compare the original split-variable formulation,
+realization feasibility, and independent best responses on complete smaller
+subtrees. Equilibria can be nonunique, so equivalent LP formulations may choose
+different valid policies.
+
+Run the regression checks with:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
 The JSON artifact records:
 
 - the hidden-cell configuration and starting player;
