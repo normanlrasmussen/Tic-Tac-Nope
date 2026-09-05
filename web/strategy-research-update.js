@@ -229,7 +229,7 @@
       if (!token || token === 'H') return null;
       let move;
       if (token[0] === 'V') move = Number(token.slice(2));
-      else if (token[0] === 'S' || token[0] === 'F') move = Number(token.slice(1));
+      else if (token[0] === 'P') move = Number(token.slice(1));
       else return null;
       if (!Number.isInteger(move) || move < 0 || move > 8) return null;
       history.push(move);
