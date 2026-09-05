@@ -13,7 +13,9 @@ Default scope: every mystery-cell set of size >= 2.
 That is 502 raw masks, 98 geometric symmetry classes, and 196 configurations
 once the two starting players are included.
 
-The run is resumable: existing output files are skipped unless --force is used.
+The run is resumable. Exact artifacts are reused only when they declare the
+current information model; stale artifacts from older game semantics are never
+published in the exact-policy manifest.
 """
 
 from __future__ import annotations
@@ -32,6 +34,7 @@ ROOT = Path(__file__).resolve().parent
 WEB_EQ = ROOT / "web" / "equilibria"
 EXACT_DIR = WEB_EQ / "exact"
 MCCFR_DIR = WEB_EQ / "mccfr"
+INFORMATION_MODEL = "hidden-attempt-location-no-result-v2"
 _metadata_cache: Dict[Path, tuple] = {}
 
 
@@ -150,8 +153,14 @@ def run_command(command: List[str]) -> None:
 def solve_exact(mask: int, start: str, node_limit: int, force: bool) -> Path:
     out = EXACT_DIR / f"mask-{mask}-{start}.json"
     if out.exists() and not force:
-        print(f"SKIP exact  mask={mask:03d} start={start}  ({out.name} exists)")
-        return out
+        try:
+            existing = json.loads(out.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            existing = None
+        if isinstance(existing, dict) and existing.get("informationModel") == INFORMATION_MODEL:
+            print(f"SKIP exact  mask={mask:03d} start={start}  ({out.name} is current)")
+            return out
+        print(f"STALE exact mask={mask:03d} start={start}  ({out.name} uses an older information model)")
     cells = ",".join(map(str, mask_cells(mask)))
     command = [
         sys.executable,
@@ -171,7 +180,10 @@ def solve_mccfr(mask: int, start: str, iterations: int, seed: int, force: bool) 
     if out.exists() and not force:
         try:
             existing = json.loads(out.read_text(encoding="utf-8"))
-            if int(existing.get("iterations", 0)) >= iterations:
+            if (
+                existing.get("informationModel") == INFORMATION_MODEL
+                and int(existing.get("iterations", 0)) >= iterations
+            ):
                 print(
                     f"SKIP mccfr  mask={mask:03d} start={start}  "
                     f"({existing.get('iterations', 0):,} iterations already stored)"
@@ -205,6 +217,7 @@ def artifact_metadata(path: Path) -> dict:
     data = json.loads(path.read_text(encoding="utf-8"))
     result = {
         "file": path.relative_to(WEB_EQ).as_posix(),
+        "informationModel": data.get("informationModel"),
         "hiddenMask": data["hiddenMask"],
         "hidden": data["hidden"],
         "startPlayer": data["startPlayer"],
@@ -227,11 +240,14 @@ def artifact_metadata(path: Path) -> dict:
 
 
 def rebuild_manifest(mode: str) -> None:
-    exact = [artifact_metadata(p) for p in sorted(EXACT_DIR.glob("mask-*-?.json"))]
-    mccfr = [artifact_metadata(p) for p in sorted(MCCFR_DIR.glob("mask-*-?.json"))]
+    exact_all = [artifact_metadata(p) for p in sorted(EXACT_DIR.glob("mask-*-?.json"))]
+    mccfr_all = [artifact_metadata(p) for p in sorted(MCCFR_DIR.glob("mask-*-?.json"))]
+    exact = [item for item in exact_all if item.get("informationModel") == INFORMATION_MODEL]
+    mccfr = [item for item in mccfr_all if item.get("informationModel") == INFORMATION_MODEL]
     payload = {
-        "schema": 2,
+        "schema": 3,
         "mode": mode,
+        "informationModel": INFORMATION_MODEL,
         # Backward-compatible name used by the current exact-policy website loader.
         "artifacts": exact,
         "exactArtifacts": exact,
@@ -240,7 +256,12 @@ def rebuild_manifest(mode: str) -> None:
     }
     WEB_EQ.mkdir(parents=True, exist_ok=True)
     (WEB_EQ / "manifest.json").write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
-    print(f"Manifest: {len(exact)} exact artifacts, {len(mccfr)} MCCFR artifacts")
+    stale_exact = len(exact_all) - len(exact)
+    stale_mccfr = len(mccfr_all) - len(mccfr)
+    print(
+        f"Manifest: {len(exact)} exact artifacts, {len(mccfr)} MCCFR artifacts "
+        f"({stale_exact} stale exact, {stale_mccfr} stale MCCFR excluded)"
+    )
 
 
 def main() -> None:
@@ -297,7 +318,7 @@ def main() -> None:
     )
     print(f"Solvers: {args.solvers}; MCCFR iterations/config: {args.mccfr_iterations:,}")
     print("Order: increasing hidden-cell count, with both starters per mask.")
-    print("Existing completed files will be skipped.\n")
+    print("Existing current-model completed files will be skipped; stale files are recomputed.\n")
 
     failures = []
     start_time = time.time()

@@ -14,14 +14,23 @@ import re
 from pathlib import Path
 
 import precompute_all as batch
+from sequence_form_lp import INFORMATION_MODEL
 
 _completed_this_run: set[Path] = set()
 
 
+def artifact_matches_information_model(artifact: dict) -> bool:
+    return (
+        artifact.get("schema") == 2
+        and artifact.get("numericallySolved") is True
+        and artifact.get("informationModel") == INFORMATION_MODEL
+    )
+
+
 def swap_players(artifact: dict) -> dict:
     """Relabel an exact equilibrium under the O <-> X game isomorphism."""
-    if artifact.get("schema") != 2 or artifact.get("numericallySolved") is not True:
-        raise ValueError("A solved compact exact artifact is required")
+    if not artifact_matches_information_model(artifact):
+        raise ValueError("A solved compact exact artifact for the current information model is required")
     start = artifact["startPlayer"]
     if start not in ("O", "X"):
         raise ValueError("Invalid starting player")
@@ -44,11 +53,14 @@ def swap_players(artifact: dict) -> dict:
         policy = {}
         for key, probabilities in artifact["policy"][player].items():
             actor, starter, mask, observations = key.split("|", 3)
-            if (actor != ("2" if player == "O" else "1")
-                    or starter != ("2" if start == "O" else "1")
-                    or int(mask) != artifact["hiddenMask"]):
+            if (
+                actor != ("2" if player == "O" else "1")
+                or starter != ("2" if start == "O" else "1")
+                or int(mask) != artifact["hiddenMask"]
+            ):
                 raise ValueError("Inconsistent information key")
-            # Only public observations name the actor. S/F actions and H are unchanged.
+            # Only visible public observations encode the actor identity. P and H
+            # observation tokens are invariant under O/X relabeling.
             observations = re.sub(r"V([12])", lambda m: "V" + str(3 - int(m[1])), observations)
             policy[f"{3-int(actor)}|{3-int(starter)}|{mask}|{observations}"] = probabilities
         policies[target] = policy
@@ -59,8 +71,15 @@ def swap_players(artifact: dict) -> dict:
 def solve_exact_compact(mask: int, start: str, node_limit: int, force: bool) -> Path:
     out = batch.EXACT_DIR / f"mask-{mask}-{start}.json"
     if out.exists() and not force:
-        print(f"SKIP exact  mask={mask:03d} start={start}  ({out.name} exists)")
-        return out
+        try:
+            existing = json.loads(out.read_text(encoding="utf-8"))
+        except (ValueError, TypeError, OSError):
+            existing = None
+        if isinstance(existing, dict) and artifact_matches_information_model(existing):
+            print(f"SKIP exact  mask={mask:03d} start={start}  ({out.name} is current)")
+            return out
+        print(f"STALE exact mask={mask:03d} start={start}  ({out.name} uses an older information model; recomputing)")
+
     counterpart = batch.EXACT_DIR / f"mask-{mask}-{'X' if start == 'O' else 'O'}.json"
     if counterpart.exists() and (not force or counterpart in _completed_this_run):
         try:
@@ -73,7 +92,7 @@ def solve_exact_compact(mask: int, start: str, node_limit: int, force: bool) -> 
                 raise ValueError("Counterpart exceeds requested node limit")
             artifact = swap_players(source)
         except (ValueError, KeyError, TypeError, AttributeError, OSError):
-            # An incompatible or incomplete counterpart never replaces a full solve.
+            # An incompatible, stale, or incomplete counterpart never replaces a full solve.
             pass
         else:
             from sequence_form_lp_compact import write_artifact

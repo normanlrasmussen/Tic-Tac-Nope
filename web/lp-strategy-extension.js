@@ -16,6 +16,13 @@
 
   function symbol(player) { return player === T.O ? 'O' : 'X'; }
   function configKey(mask, startPlayer) { return `${Number(mask)}|${symbol(startPlayer)}`; }
+  function currentModelArtifact(value) {
+    return Boolean(
+      value
+      && value.numericallySolved
+      && value.informationModel === T.INFORMATION_MODEL
+    );
+  }
 
   function selectedConfiguration() {
     let mask = 0;
@@ -28,12 +35,13 @@
   }
 
   function artifactForRules(rules) {
-    return artifacts.get(configKey(rules.hiddenMask, rules.startPlayer)) || null;
+    const artifact = artifacts.get(configKey(rules.hiddenMask, rules.startPlayer)) || null;
+    return currentModelArtifact(artifact) ? artifact : null;
   }
 
   function exactPolicy(state, rules) {
     const artifact = artifactForRules(rules);
-    if (!artifact || !artifact.numericallySolved) return [];
+    if (!artifact) return [];
     const player = state.turn;
     const key = T.informationKey(state, rules, player);
     const table = artifact.policy?.[symbol(player)]?.[key];
@@ -61,7 +69,7 @@
   T.chooseStrategy = function chooseWithExactLP(id, context) {
     if (id !== ID) return originalChoose(id, context);
     const policy = exactPolicy(context.state, context.rules);
-    if (!policy.length) throw new Error('No certified sequence-form LP artifact is loaded for this game configuration.');
+    if (!policy.length) throw new Error('No certified sequence-form LP artifact for the current information model is loaded for this game configuration.');
     return sample(policy, context.rng || Math.random);
   };
 
@@ -73,8 +81,8 @@
     if (!artifact || !policy.length) {
       return {
         id: ID, name: NAME, metric: 'unavailable', metricLabel: 'Exact artifact unavailable',
-        scaleLabel: 'offline solve required', rows: [], policy: [], bestMove: null, worlds: [],
-        detail: 'No certified full-game sequence-form artifact is loaded for this configuration.'
+        scaleLabel: 'local solve required', rows: [], policy: [], bestMove: null, worlds: [],
+        detail: 'No certified full-game sequence-form artifact for the current information model is loaded for this configuration.'
       };
     }
     const rows = policy.map((item) => ({ move: item.move, score: item.prob, scaled: item.prob }))
@@ -108,15 +116,15 @@
 
   function refreshSelectors() {
     const cfg = selectedConfiguration();
-    const available = artifacts.has(configKey(cfg.mask, cfg.startPlayer));
+    const available = currentModelArtifact(artifacts.get(configKey(cfg.mask, cfg.startPlayer)));
     for (const id of ['ai-strategy', 'decision-strategy']) {
       const select = document.getElementById(id);
       if (!select) continue;
       const option = optionFor(select);
       option.disabled = !available;
       option.textContent = available
-        ? `${NAME} · certified online policy`
-        : `${NAME} · exact artifact not generated for this setup`;
+        ? `${NAME} · locally solved static policy`
+        : `${NAME} · current-model local artifact not published`;
       if (!available && select.value === ID) {
         select.value = 'nash';
         select.dispatchEvent(new Event('change', { bubbles: true }));
@@ -125,8 +133,8 @@
     const note = document.getElementById('lp-online-status');
     if (note) {
       note.textContent = available
-        ? 'Certified exact LP policy loaded for the selected mystery cells and turn order. It is playable online by direct policy lookup.'
-        : 'No certified LP artifact is currently published for this exact mystery-cell / starting-player configuration.';
+        ? 'A current-model LP policy generated locally is loaded for the selected mystery cells and turn order. The browser only performs a static policy lookup; it never solves an LP.'
+        : 'No current-model LP artifact is published for this exact mystery-cell / starting-player configuration. Generate it locally before publishing.';
     }
   }
 
@@ -136,17 +144,24 @@
       if (!response.ok) throw new Error(`manifest HTTP ${response.status}`);
       manifest = await response.json();
       const entries = Array.isArray(manifest.artifacts) ? manifest.artifacts : [];
-      await Promise.all(entries.map(async (entry) => {
+      const compatibleEntries = entries.filter((entry) => entry.informationModel === T.INFORMATION_MODEL);
+      await Promise.all(compatibleEntries.map(async (entry) => {
         try {
           const result = await fetch(`./equilibria/${entry.file}`, { cache: 'force-cache' });
           if (!result.ok) throw new Error(`HTTP ${result.status}`);
           const artifact = await result.json();
-          if (!artifact.numericallySolved) return;
+          if (!currentModelArtifact(artifact)) {
+            console.warn('Ignoring stale or uncertified exact LP artifact', entry.file);
+            return;
+          }
           artifacts.set(configKey(artifact.hiddenMask, artifact.startPlayer === 'O' ? T.O : T.X), artifact);
         } catch (error) {
           console.warn('Failed to load exact LP artifact', entry, error);
         }
       }));
+      if (entries.length !== compatibleEntries.length) {
+        console.info(`Ignored ${entries.length - compatibleEntries.length} LP manifest entries from an older information model.`);
+      }
     } catch (error) {
       console.warn('Exact LP manifest unavailable', error);
     }
@@ -162,14 +177,14 @@
     section.className = 'strategy-doc-section';
     section.innerHTML = `
       <header><p class="strategy-section-number">LP · CERTIFIED EQUILIBRIUM</p><h2>${NAME}</h2>
-      <p class="strategy-doc-meta">Sequence-form linear programming · Playable online when a certified artifact exists</p>
-      <p class="strategy-verdict">The exact Nash benchmark is solved offline once, then the website plays it online with instantaneous information-set policy lookups.</p></header>
-      <h3>How it works online</h3>
-      <p>The expensive step is the full sparse LP solve. That solve exports a behavioral policy table and its certificate. GitHub Pages serves the resulting JSON. During a game the browser computes the current information key, reads <code>σ*(a|I)</code>, and samples one action. No approximation or browser-side re-solving is introduced.</p>
-      <pre class="strategy-doc-formula"><code>offline:  max fᵀp  s.t. Ex=e, x≥0, Fᵀp≤Aᵀx\nonline:   a ~ σ*(·|I)</code></pre>
+      <p class="strategy-doc-meta">Sequence-form linear programming · solved locally, served as static data</p>
+      <p class="strategy-verdict">The exact Nash benchmark is solved locally once. Deployment and browser play only serve and query the resulting policy table; neither path runs the LP solver.</p></header>
+      <h3>How it works on the site</h3>
+      <p>The expensive step is the full sparse LP solve, run explicitly on a local machine. That solve exports a behavioral policy table and its certificate. GitHub Pages can serve the resulting JSON. During a game the browser computes the current information key, reads <code>σ*(a|I)</code>, and samples one action. There is no deployment-time or browser-side LP solve.</p>
+      <pre class="strategy-doc-formula"><code>local:   max fᵀp  s.t. Ex=e, x≥0, Fᵀp≤Aᵀx\nsite:    a ~ σ*(·|I)</code></pre>
       <h3>Theoretical guarantee</h3>
-      <p>If the complete unabstracted game was encoded correctly and both LPs solved to optimality, the published realization plans are a minimax/Nash equilibrium up to numerical LP tolerance. The artifact records the O lower bound, O upper bound, and their duality gap.</p>
-      <p><strong>Availability rule.</strong> The website enables this strategy only when the exact selected mystery-cell configuration and starting player have a matching certified artifact. It never substitutes MCCFR under the LP name.</p>
+      <p>If the complete unabstracted game was encoded correctly and both LPs solved to optimality, the published realization plans are a minimax/Nash equilibrium up to numerical LP tolerance. The artifact records the O lower bound, O upper bound, duality gap, and information-model identifier.</p>
+      <p><strong>Availability rule.</strong> The website enables this strategy only when the exact selected mystery-cell configuration and starting player have a certified artifact generated under the same information model as the live game. Older artifacts are rejected, and the site never substitutes MCCFR under the LP name.</p>
       <p id="lp-online-status">Checking published exact-policy artifacts…</p>
       <p><a class="secondary-btn compact" href="${DETAIL_URL}">Full LP theory & guarantees</a></p>`;
     const closing = document.getElementById('strategy-interpretation');
@@ -187,8 +202,8 @@
     panel.id = 'lp-analysis-benchmark';
     panel.className = 'panel analysis-training-panel';
     panel.innerHTML = `<div class="analysis-training-copy"><p class="kicker">EXACT EQUILIBRIUM BENCHMARK</p><h2>${NAME}</h2>
-      <p class="muted">Certified LP artifacts are precomputed and published with the static site. When the current setup has one, the exact strategy is enabled in Play and its local equilibrium probabilities appear in Analysis.</p></div>
-      <div class="analysis-training-metrics"><span>Mode <strong>precomputed exact policy</strong></span><a class="secondary-btn compact" href="${DETAIL_URL}">Theory & guarantees</a></div>`;
+      <p class="muted">Current-model LP artifacts are generated locally and may be published with the static site. When the current setup has one, the exact strategy is enabled in Play and its local equilibrium probabilities appear in Analysis. Deployment never runs the LP solver.</p></div>
+      <div class="analysis-training-metrics"><span>Mode <strong>local solve → static lookup</strong></span><a class="secondary-btn compact" href="${DETAIL_URL}">Theory & guarantees</a></div>`;
     section.parentNode.insertBefore(panel, section);
   }
 

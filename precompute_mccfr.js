@@ -57,6 +57,7 @@ const artifact = {
   schema: 1,
   solver: 'OutcomeSamplingMCCFR',
   game: 'Tic-Tac-Nope',
+  informationModel: T.INFORMATION_MODEL,
   hidden,
   hiddenMask: rules.hiddenMask,
   startPlayer: startText,
@@ -68,6 +69,7 @@ const artifact = {
   policy,
   notes: [
     'This is the time-averaged behavioral policy produced by the same OutcomeSamplingMCCFR implementation used by the website.',
+    'Mystery-cell attempts reveal the actor\'s attempted location but not success/failure.',
     'Finite MCCFR training is approximate; it is not an exact Nash certificate.',
     'Information sets not visited during sampling are omitted and should use a documented fallback if queried.'
   ]

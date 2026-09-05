@@ -38,7 +38,7 @@ The information key is
 I_i(h)=\bigl(i,\text{start player},\text{mystery mask},o_i(h)\bigr).
 \]
 
-A player observes visible moves and locations, its own mystery-action locations and success/failure results, an opponent mystery action only as a fog action, terminal/nonterminal status, and the ordering of all observations.
+A player observes visible moves and locations, its own mystery-action locations, an opponent mystery action only as a fog action, terminal/nonterminal status, and the ordering of all observations. A mystery attempt provides no direct success/failure result; hidden ownership is known only when it is implied by the player's complete observation history.
 
 No player forgets an earlier action or observation. Thus the modeled game has perfect recall. The engine also asserts that histories sharing one information key expose the same legal action set.
 

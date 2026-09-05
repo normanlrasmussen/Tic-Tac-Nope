@@ -41,7 +41,8 @@ def artifact_for(game):
     ro, lo, _ = lp.solve_max_player(game.o, game.x, game.payoff)
     rx, lx, _ = lp.solve_max_player(game.x, game.o, -game.payoff.T.tocsr())
     po, px = compact_behavioral_policy(game.o, ro), compact_behavioral_policy(game.x, rx)
-    return dict(schema=2, numericallySolved=True, hiddenMask=game.rules.hidden_mask,
+    return dict(schema=2, numericallySolved=True, informationModel=lp.INFORMATION_MODEL,
+                hiddenMask=game.rules.hidden_mask,
                 hidden=precompute.batch.mask_cells(game.rules.hidden_mask),
                 startPlayer='O' if game.rules.start_player == lp.O else 'X',
                 valueO=(lo-lx)/2, lowerBoundO=lo, upperBoundO=-lx, dualityGap=max(0, -lx-lo),

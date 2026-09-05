@@ -223,8 +223,11 @@
     invalidateDerivedViews();
 
     const hidden = after.last.hidden;
-    const success = after.last.success;
-    recordHistory(`${T.symbol(actor)}${after.moveNo}: ${hidden ? 'fog' : 'cell'} ${move + 1}`);
+    const actorSymbol = T.symbol(actor);
+    const historyLabel = hidden && actor !== O
+      ? `${actorSymbol}${after.moveNo}: fog action`
+      : `${actorSymbol}${after.moveNo}: ${hidden ? 'fog cell' : 'cell'} ${move + 1}`;
+    recordHistory(historyLabel);
 
     const terminal = T.terminal(state);
     if (terminal.done) {
@@ -239,9 +242,7 @@
 
     if (actor === O) {
       $('move-message').textContent = hidden
-        ? (success
-          ? `You privately claimed mystery cell ${move + 1}.`
-          : `Mystery cell ${move + 1} was already owned by X. Your turn was consumed.`)
+        ? `You attempted mystery cell ${move + 1}. No success or failure signal is revealed.`
         : `You placed O in cell ${move + 1}.`;
     } else {
       $('move-message').textContent = hidden ? 'The opponent acted somewhere in the fog.' : `The opponent placed X in cell ${move + 1}.`;
@@ -309,7 +310,8 @@
       cell.textContent = display.text;
       if (display.cls) cell.classList.add(...display.cls.split(' '));
       if (isHidden(move)) cell.classList.add('mystery');
-      if (state.last?.move === move) cell.classList.add('last');
+      const lastMoveVisibleToHuman = state.last && (!state.last.hidden || state.last.actor === O);
+      if (lastMoveVisibleToHuman && state.last.move === move) cell.classList.add('last');
       cell.disabled = !legal.has(move);
       cell.setAttribute('aria-label', `Cell ${move + 1}${isHidden(move) ? ', mystery' : ''}${display.text ? `, ${display.text}` : ''}`);
       cell.addEventListener('click', () => humanMove(move));
