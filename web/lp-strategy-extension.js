@@ -8,8 +8,10 @@
   const NAME = 'Exact Nash (Sequence-Form LP)';
   const DETAIL_URL = './strategy-lp.html';
   const MANIFEST_URL = './equilibria/manifest.json';
+  const IDENTITY_TRANSFORM = Object.freeze([0, 1, 2, 3, 4, 5, 6, 7, 8]);
   const artifacts = new Map();
   let manifest = { artifacts: [] };
+  let symmetryMap = { masks: {} };
 
   const lpStrategy = { id: ID, name: NAME, family: 'Certified sequence-form equilibrium', play: true, sim: false };
   if (!T.STRATEGIES.some((s) => s.id === ID)) T.STRATEGIES.splice(1, 0, lpStrategy);
@@ -24,6 +26,76 @@
     );
   }
 
+  function validTransform(value) {
+    return Array.isArray(value)
+      && value.length === 9
+      && value.every((move) => Number.isInteger(move) && move >= 0 && move < 9)
+      && new Set(value).size === 9;
+  }
+
+  function symmetryForMask(mask) {
+    const rawMask = Number(mask);
+    const entry = symmetryMap?.masks?.[String(rawMask)];
+    if (
+      entry
+      && Number.isInteger(Number(entry.canonicalMask))
+      && validTransform(entry.toCanonical)
+      && validTransform(entry.fromCanonical)
+    ) {
+      return {
+        canonicalMask: Number(entry.canonicalMask),
+        toCanonical: entry.toCanonical.map(Number),
+        fromCanonical: entry.fromCanonical.map(Number),
+        transform: entry.transform || 'unknown'
+      };
+    }
+    return {
+      canonicalMask: rawMask,
+      toCanonical: IDENTITY_TRANSFORM,
+      fromCanonical: IDENTITY_TRANSFORM,
+      transform: 'id'
+    };
+  }
+
+  function transformObservation(observation, transform) {
+    if (!observation) return '';
+    let cursor = 0;
+    let transformed = '';
+    while (cursor < observation.length) {
+      if (observation.startsWith('H;', cursor)) {
+        transformed += 'H;';
+        cursor += 2;
+        continue;
+      }
+      if (observation[cursor] === 'P') {
+        const move = Number(observation[cursor + 1]);
+        if (!Number.isInteger(move) || observation[cursor + 2] !== ';') return null;
+        transformed += `P${transform[move]};`;
+        cursor += 3;
+        continue;
+      }
+      if (observation[cursor] === 'V') {
+        const actor = Number(observation[cursor + 1]);
+        const move = Number(observation[cursor + 2]);
+        if ((actor !== T.O && actor !== T.X) || !Number.isInteger(move) || observation[cursor + 3] !== ';') return null;
+        transformed += `V${actor}${transform[move]};`;
+        cursor += 4;
+        continue;
+      }
+      return null;
+    }
+    return transformed;
+  }
+
+  function canonicalInformationKey(state, rules, player, symmetry) {
+    const rawKey = T.informationKey(state, rules, player);
+    const parts = rawKey.split('|');
+    if (parts.length !== 4) return null;
+    const transformedObservation = transformObservation(parts[3], symmetry.toCanonical);
+    if (transformedObservation === null) return null;
+    return `${parts[0]}|${parts[1]}|${symmetry.canonicalMask}|${transformedObservation}`;
+  }
+
   function selectedConfiguration() {
     let mask = 0;
     document.querySelectorAll('#hidden-picker .picker-cell.selected').forEach((cell) => {
@@ -35,21 +107,30 @@
   }
 
   function artifactForRules(rules) {
-    const artifact = artifacts.get(configKey(rules.hiddenMask, rules.startPlayer)) || null;
+    const symmetry = symmetryForMask(rules.hiddenMask);
+    const artifact = artifacts.get(configKey(symmetry.canonicalMask, rules.startPlayer)) || null;
     return currentModelArtifact(artifact) ? artifact : null;
   }
 
   function exactPolicy(state, rules) {
-    const artifact = artifactForRules(rules);
-    if (!artifact) return [];
+    const symmetry = symmetryForMask(rules.hiddenMask);
+    const artifact = artifacts.get(configKey(symmetry.canonicalMask, rules.startPlayer)) || null;
+    if (!currentModelArtifact(artifact)) return [];
+
     const player = state.turn;
-    const key = T.informationKey(state, rules, player);
-    const table = artifact.policy?.[symbol(player)]?.[key];
+    const key = canonicalInformationKey(state, rules, player, symmetry);
+    const table = key ? artifact.policy?.[symbol(player)]?.[key] : null;
     const legal = T.legalActions(state, rules, player);
     if (!table) {
       return legal.map((move) => ({ move, prob: 1 / Math.max(1, legal.length) }));
     }
-    const policy = legal.map((move) => ({ move, prob: Math.max(0, Number(table[String(move)]) || 0) }));
+
+    // Policies are stored in canonical board coordinates. Query each legal move
+    // through raw -> canonical coordinates, then keep browser play in raw coords.
+    const policy = legal.map((move) => {
+      const canonicalMove = symmetry.toCanonical[move];
+      return { move, prob: Math.max(0, Number(table[String(canonicalMove)]) || 0) };
+    });
     const total = policy.reduce((sum, item) => sum + item.prob, 0);
     if (!(total > 0)) return legal.map((move) => ({ move, prob: 1 / Math.max(1, legal.length) }));
     return policy.map((item) => ({ ...item, prob: item.prob / total }));
@@ -103,6 +184,8 @@
 
   T.exactLPPolicy = exactPolicy;
   T.exactLPArtifactForRules = artifactForRules;
+  T.exactLPSymmetryForMask = symmetryForMask;
+  T.exactLPCanonicalInformationKey = canonicalInformationKey;
 
   function optionFor(select) {
     let option = select.querySelector('option[value="lp"]');
@@ -116,7 +199,7 @@
 
   function refreshSelectors() {
     const cfg = selectedConfiguration();
-    const available = currentModelArtifact(artifacts.get(configKey(cfg.mask, cfg.startPlayer)));
+    const available = Boolean(artifactForRules({ hiddenMask: cfg.mask, startPlayer: cfg.startPlayer }));
     for (const id of ['ai-strategy', 'decision-strategy']) {
       const select = document.getElementById(id);
       if (!select) continue;
@@ -133,8 +216,8 @@
     const note = document.getElementById('lp-online-status');
     if (note) {
       note.textContent = available
-        ? 'A current-model LP policy generated locally is loaded for the selected mystery cells and turn order. The browser only performs a static policy lookup; it never solves an LP.'
-        : 'No current-model LP artifact is published for this exact mystery-cell / starting-player configuration. Generate it locally before publishing.';
+        ? 'A current-model LP policy generated locally is loaded for the selected mystery cells and turn order. Symmetric board configurations reuse the corresponding canonical artifact. The browser only performs a static policy lookup; it never solves an LP.'
+        : 'No current-model LP artifact is published for this mystery-cell symmetry class / starting-player configuration. Generate it locally before publishing.';
     }
   }
 
@@ -143,6 +226,21 @@
       const response = await fetch(MANIFEST_URL, { cache: 'no-cache' });
       if (!response.ok) throw new Error(`manifest HTTP ${response.status}`);
       manifest = await response.json();
+
+      const symmetryPath = typeof manifest.symmetryMap === 'string' && manifest.symmetryMap
+        ? manifest.symmetryMap
+        : 'symmetry-map.json';
+      try {
+        const symmetryResponse = await fetch(`./equilibria/${symmetryPath}`, { cache: 'force-cache' });
+        if (!symmetryResponse.ok) throw new Error(`HTTP ${symmetryResponse.status}`);
+        const loadedSymmetry = await symmetryResponse.json();
+        if (!loadedSymmetry || typeof loadedSymmetry.masks !== 'object') throw new Error('invalid symmetry-map payload');
+        symmetryMap = loadedSymmetry;
+      } catch (error) {
+        console.warn('Exact LP symmetry map unavailable; only directly stored masks can be used.', error);
+        symmetryMap = { masks: {} };
+      }
+
       const entries = Array.isArray(manifest.artifacts) ? manifest.artifacts : [];
       const compatibleEntries = entries.filter((entry) => entry.informationModel === T.INFORMATION_MODEL);
       await Promise.all(compatibleEntries.map(async (entry) => {
@@ -178,13 +276,13 @@
     section.innerHTML = `
       <header><p class="strategy-section-number">LP · CERTIFIED EQUILIBRIUM</p><h2>${NAME}</h2>
       <p class="strategy-doc-meta">Sequence-form linear programming · solved locally, served as static data</p>
-      <p class="strategy-verdict">The exact Nash benchmark is solved locally once. Deployment and browser play only serve and query the resulting policy table; neither path runs the LP solver.</p></header>
+      <p class="strategy-verdict">The exact Nash benchmark is solved locally once per board-symmetry class. Deployment and browser play only serve and query the resulting policy table; neither path runs the LP solver.</p></header>
       <h3>How it works on the site</h3>
-      <p>The expensive step is the full sparse LP solve, run explicitly on a local machine. That solve exports a behavioral policy table and its certificate. GitHub Pages can serve the resulting JSON. During a game the browser computes the current information key, reads <code>σ*(a|I)</code>, and samples one action. There is no deployment-time or browser-side LP solve.</p>
-      <pre class="strategy-doc-formula"><code>local:   max fᵀp  s.t. Ex=e, x≥0, Fᵀp≤Aᵀx\nsite:    a ~ σ*(·|I)</code></pre>
+      <p>The expensive step is the full sparse LP solve, run explicitly on a local machine. That solve exports a behavioral policy table and its certificate. GitHub Pages can serve the resulting JSON. During a game the browser maps the selected board to its canonical symmetry representative, transforms the current information key, reads <code>σ*(a|I)</code>, maps the action probabilities back to the displayed board, and samples one action. There is no deployment-time or browser-side LP solve.</p>
+      <pre class="strategy-doc-formula"><code>local:   max fᵀp  s.t. Ex=e, x≥0, Fᵀp≤Aᵀx\nsite:    raw I → canonical I → σ*(·|I) → raw action</code></pre>
       <h3>Theoretical guarantee</h3>
-      <p>If the complete unabstracted game was encoded correctly and both LPs solved to optimality, the published realization plans are a minimax/Nash equilibrium up to numerical LP tolerance. The artifact records the O lower bound, O upper bound, duality gap, and information-model identifier.</p>
-      <p><strong>Availability rule.</strong> The website enables this strategy only when the exact selected mystery-cell configuration and starting player have a certified artifact generated under the same information model as the live game. Older artifacts are rejected, and the site never substitutes MCCFR under the LP name.</p>
+      <p>If the complete unabstracted game was encoded correctly and both LPs solved to optimality, the published realization plans are a minimax/Nash equilibrium up to numerical LP tolerance. Board rotations/reflections are exact game isomorphisms, so a canonical policy remains an equilibrium after the corresponding action and observation relabeling. The artifact records the O lower bound, O upper bound, duality gap, and information-model identifier.</p>
+      <p><strong>Availability rule.</strong> The website enables this strategy only when the selected mystery-cell configuration maps to a certified canonical artifact for the same starting player and information model. Older artifacts are rejected, and the site never substitutes MCCFR under the LP name.</p>
       <p id="lp-online-status">Checking published exact-policy artifacts…</p>
       <p><a class="secondary-btn compact" href="${DETAIL_URL}">Full LP theory & guarantees</a></p>`;
     const closing = document.getElementById('strategy-interpretation');
@@ -202,8 +300,8 @@
     panel.id = 'lp-analysis-benchmark';
     panel.className = 'panel analysis-training-panel';
     panel.innerHTML = `<div class="analysis-training-copy"><p class="kicker">EXACT EQUILIBRIUM BENCHMARK</p><h2>${NAME}</h2>
-      <p class="muted">Current-model LP artifacts are generated locally and may be published with the static site. When the current setup has one, the exact strategy is enabled in Play and its local equilibrium probabilities appear in Analysis. Deployment never runs the LP solver.</p></div>
-      <div class="analysis-training-metrics"><span>Mode <strong>local solve → static lookup</strong></span><a class="secondary-btn compact" href="${DETAIL_URL}">Theory & guarantees</a></div>`;
+      <p class="muted">Current-model LP artifacts are generated locally and may be published with the static site. One solved canonical board covers every rotationally/reflection-equivalent mystery-cell layout. When the current setup has one, the exact strategy is enabled in Play and its local equilibrium probabilities appear in Analysis. Deployment never runs the LP solver.</p></div>
+      <div class="analysis-training-metrics"><span>Mode <strong>local solve → static symmetry lookup</strong></span><a class="secondary-btn compact" href="${DETAIL_URL}">Theory & guarantees</a></div>`;
     section.parentNode.insertBefore(panel, section);
   }
 

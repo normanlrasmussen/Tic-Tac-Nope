@@ -28,8 +28,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate game-theory engine
-        run: node game_theory_validation.js
+      - name: Validate game-theory engine and static browser code
+        run: |
+          node game_theory_validation.js
+          node --check web/app4-core.js
+          node --check web/lp-strategy-extension.js
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
