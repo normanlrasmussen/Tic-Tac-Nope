@@ -6,6 +6,7 @@
   const EMPTY = 0;
   const FULL_MASK = 0x1ff;
   const WIN_MASKS = [0x007, 0x038, 0x1c0, 0x049, 0x092, 0x124, 0x111, 0x054];
+  const INFORMATION_MODEL = 'hidden-attempt-location-no-result-v2';
 
   function other(player) { return player === O ? X : O; }
   function symbol(player) { return player === O ? 'O' : player === X ? 'X' : ''; }
@@ -61,7 +62,10 @@
   function obsToken(before, after, actor, viewer, move, hidden) {
     if (!hidden) return `V${actor}${move};`;
     if (viewer !== actor) return 'H;';
-    return `${after.last.success ? 'S' : 'F'}${move};`;
+    // A player remembers which mystery cell they attempted, but receives no
+    // success/failure signal. Any certainty about ownership must be inferred
+    // from the compatible histories, never injected as private feedback.
+    return `P${move};`;
   }
 
   function applyAction(state, rules, move) {
@@ -368,5 +372,5 @@
     { id: 'oracle', name: 'Omniscient Oracle', family: 'Cheating benchmark', play: false, sim: true }
   ];
 
-  global.TTNTheory = { X, O, EMPTY, WIN_MASKS, other, symbol, bit, popcount, maskToMoves, movesToMask, makeRules, makeRoot, terminal, utility, legalActions, applyAction, informationKey, boardArray, stateKey, updateBeliefs, BeliefTracker, oracleValue, beliefActionRows, softmaxPolicy, samplePolicy, RNG, OutcomeSamplingMCCFR, chooseStrategy, STRATEGIES };
+  global.TTNTheory = { X, O, EMPTY, WIN_MASKS, INFORMATION_MODEL, other, symbol, bit, popcount, maskToMoves, movesToMask, makeRules, makeRoot, terminal, utility, legalActions, applyAction, informationKey, boardArray, stateKey, updateBeliefs, BeliefTracker, oracleValue, beliefActionRows, softmaxPolicy, samplePolicy, RNG, OutcomeSamplingMCCFR, chooseStrategy, STRATEGIES };
 })(window);
