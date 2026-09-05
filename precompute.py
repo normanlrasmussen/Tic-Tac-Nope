@@ -53,9 +53,11 @@ def swap_players(artifact: dict) -> dict:
         policy = {}
         for key, probabilities in artifact["policy"][player].items():
             actor, starter, mask, observations = key.split("|", 3)
-            if actor != ("2" if player == "O" else "1")
-                    or starter != ("2" if start == "O" else "1")
-                    or int(mask) != artifact["hiddenMask"]):
+            if (
+                actor != ("2" if player == "O" else "1")
+                or starter != ("2" if start == "O" else "1")
+                or int(mask) != artifact["hiddenMask"]
+            ):
                 raise ValueError("Inconsistent information key")
             # Only visible public observations encode the actor identity. P and H
             # observation tokens are invariant under O/X relabeling.
