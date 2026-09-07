@@ -11,12 +11,40 @@ import sys
 import json
 import math
 import re
+import os
+import shutil
 from pathlib import Path
 
 import precompute_all as batch
 from sequence_form_lp import INFORMATION_MODEL
 
 _completed_this_run: set[Path] = set()
+
+
+def keep_awake() -> None:
+    """Re-execute under a Linux inhibitor held for the entire batch lifetime."""
+    marker = "TIC_TAC_NOPE_SLEEP_INHIBITED"
+    if os.environ.pop(marker, None) == "1":
+        print("Keep-awake active for this batch; normal power settings resume on exit.", flush=True)
+        return
+    if "--help" in sys.argv or "-h" in sys.argv:
+        return
+    inhibitor = shutil.which("systemd-inhibit")
+    if not sys.platform.startswith("linux") or inhibitor is None:
+        raise SystemExit("Keep-awake requires Linux with systemd-inhibit installed.")
+    print("Requesting sleep, idle, lid-close and shutdown inhibition for this batch...", flush=True)
+    command = [
+        inhibitor,
+        "--what=sleep:idle:shutdown:handle-lid-switch",
+        "--mode=block",
+        "--who=Tic-Tac-Nope precompute",
+        "--why=Computing exact equilibrium web data",
+        "--",
+        sys.executable, str(Path(__file__).resolve()), *sys.argv[1:],
+    ]
+    environment = os.environ.copy()
+    environment[marker] = "1"
+    os.execve(inhibitor, command, environment)
 
 
 def artifact_matches_information_model(artifact: dict) -> bool:
@@ -118,4 +146,5 @@ def solve_exact_compact(mask: int, start: str, node_limit: int, force: bool) -> 
 batch.solve_exact = solve_exact_compact
 
 if __name__ == "__main__":
+    keep_awake()
     batch.main()

@@ -89,6 +89,13 @@ Use `--node-limit N` as a safety guard while testing the enumerator. A full equi
 python precompute.py --mode all --solvers exact --keep-going
 ```
 
+On Linux, this entrypoint automatically runs under `systemd-inhibit` to block
+sleep, idle suspension, lid-close handling, and normal shutdown during the batch.
+The inhibitor is released when the batch exits (including Ctrl+C); no permanent
+power settings are changed. If inhibition cannot be acquired, the batch does not
+start. Keep the computer plugged in and the terminal open: this cannot prevent
+power loss, forced shutdown, or termination of the terminal session.
+
 This command retains all 196 output configurations and the complete unabstracted
 game. It now avoids redundant work in several ways:
 
