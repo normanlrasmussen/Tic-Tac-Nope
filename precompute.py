@@ -72,6 +72,22 @@ def swap_players(artifact: dict) -> dict:
     swapped["valueO"] = -artifact["valueO"]
     swapped["lowerBoundO"] = -artifact["upperBoundO"]
     swapped["upperBoundO"] = -artifact["lowerBoundO"]
+    if "certificate" in artifact:
+        certificate = dict(artifact["certificate"])
+        for self_field, opponent_field in (
+            ("selfFlowResidual", "opponentFlowResidual"),
+            ("selfNonnegativityResidual", "opponentNonnegativityResidual"),
+            ("lowerBoundResidual", "upperBoundResidual"),
+        ):
+            certificate[self_field], certificate[opponent_field] = (
+                certificate[opponent_field], certificate[self_field]
+            )
+        certificate["payoff"] = -certificate["payoff"]
+        if "bestResponseLowerBound" in certificate:
+            certificate["bestResponseLowerBound"], certificate["bestResponseUpperBound"] = (
+                -certificate["bestResponseUpperBound"], -certificate["bestResponseLowerBound"]
+            )
+        swapped["certificate"] = certificate
     counts = dict(artifact["counts"])
     for stem in ("informationSets", "sequences", "storedInformationSets"):
         counts[stem + "O"], counts[stem + "X"] = counts[stem + "X"], counts[stem + "O"]

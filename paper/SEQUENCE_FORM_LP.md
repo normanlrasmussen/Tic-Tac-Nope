@@ -99,19 +99,40 @@ power loss, forced shutdown, or termination of the terminal session.
 This command retains all 196 output configurations and the complete unabstracted
 game. It now avoids redundant work in several ways:
 
-- O/X relabeling requires only one tree build and two player LPs per board mask,
-  instead of rebuilding and solving both LPs for each starter. The other output
+- O/X relabeling requires only one tree build and one primal-dual LP per board mask.
+  The other output
   swaps player policies, player identifiers in observation keys, and player counts;
   its O interval is `[-upperBoundO, -lowerBoundO]`. This is an exact symmetry of
   the rules, not an approximation.
-- Win and action-mask lookup tables replace repeated scans. The enumerator applies
-  already-validated actions directly, retaining perfect-recall and legality checks
-  at information sets and the public transition API's input validation.
+- A compiled C++ traversal enumerates the same full tree in the same order, with
+  lossless 128-bit observation histories and compact information-set arrays. It
+  retains perfect-recall and information-set legality checks. It reports progress
+  every ten million histories and responds to Ctrl+C without waiting for the tree
+  to finish. The original Python enumerator remains available as a reference.
 - HiGHS uses native unrestricted bounds for the dual variables instead of doubled
-  positive/negative columns. Both player LPs still run with the same tolerances.
+  positive/negative columns. The primal solution and inequality duals supply both
+  players' realization plans, with unchanged feasibility tolerances. Sparse matrix
+  assembly uses the CSC format consumed by HiGHS.
 - Zero payoff entries are omitted from sparse storage, while all terminal histories
   are still enumerated and counted. Manifest rebuilds cache unchanged file metadata
   rather than repeatedly decoding every policy.
+
+The native backend builds automatically once when `g++` or `clang++` is available,
+then caches the compiled library in `__pycache__` using a source/ABI fingerprint.
+Your Fedora machine already has `g++`; on another Fedora installation it can be
+installed with `sudo dnf install gcc-c++`. If compilation is unavailable, automatic
+mode warns and uses the complete Python enumerator. Native enumeration failures
+such as memory exhaustion or a violated node cap stop the solve; they do not
+silently fall back and restart it. Direct exporters accept
+`--enumerator native` (require acceleration) or `--enumerator python` (reference).
+
+Every newly exported behavioral strategy retains all positive probabilities.
+Only exactly zero own-reach information sets are omitted. The final normalized
+export is reconstructed into realization plans and checked for flow feasibility,
+nonnegativity, both dual bounds, and independent best-response values over all
+information sets. A failed certificate prevents publication. The certificate is
+included in each new artifact. Existing files remain reusable and do not acquire
+these new certificates retroactively.
 
 Existing outputs are skipped. A compatible completed counterpart can supply a missing
 starter output; otherwise the full solver runs. `--force` recomputes one starter and
@@ -122,13 +143,10 @@ interrupted write does not appear complete.
 Restart the command to use these changes in an already-running batch. Completed
 files remain reusable. An in-progress solve has no intermediate checkpoint.
 
-Validation: a full mask-3/O tree had identical catalogs and payoff entries across
-4,465,480 histories, with enumeration taking 50.8 seconds before and 26.6 seconds
-after in a local comparison (about 1.9x). This measures enumeration, not total batch
-runtime. LP regression tests compare the original split-variable formulation,
-realization feasibility, and independent best responses on complete smaller
-subtrees. Equilibria can be nonunique, so equivalent LP formulations may choose
-different valid policies.
+The native traversal was checked against the Python implementation across complete
+game trees, including information keys, actions, sequences, payoff entries, and
+realization constraints. Equilibria can be nonunique, so equivalent LP formulations
+may choose different valid policies.
 
 Run the regression checks with:
 

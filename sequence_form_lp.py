@@ -3,7 +3,7 @@
 
 This is intentionally an OFFLINE research tool. The unabstracted game is much
 larger than a browser should enumerate on demand. When the complete tree is
-built and HiGHS solves both players' sequence-form LPs, the exported realization
+built and HiGHS solves the primal-dual sequence-form LP, the exported realization
 plans form a Nash/minimax solution of the implemented two-player zero-sum
 perfect-recall game, up to numerical LP tolerance.
 
@@ -27,8 +27,8 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 import numpy as np
-from scipy.optimize import linprog
-from scipy.sparse import coo_matrix, csr_matrix, hstack
+from scipy.optimize import OptimizeResult, linprog
+from scipy.sparse import coo_matrix, csc_matrix, csr_matrix, hstack
 
 X, O = 1, 2
 FULL_MASK = 0x1FF
@@ -36,6 +36,9 @@ WIN_MASKS = (0x007, 0x038, 0x1C0, 0x049, 0x092, 0x124, 0x111, 0x054)
 INFORMATION_MODEL = "hidden-attempt-location-no-result-v2"
 _WINS = tuple(any(mask & win == win for win in WIN_MASKS) for mask in range(512))
 _ACTIONS = tuple(tuple(i for i in range(9) if mask & (1 << i)) for mask in range(512))
+# Match the existing HiGHS primal/dual feasibility defaults; optimizations must
+# not gain speed by relaxing either solver or post-solve accuracy.
+FEASIBILITY_TOLERANCE = 1e-7
 
 
 def other(player: int) -> int:
@@ -249,7 +252,25 @@ class SequenceGame:
     terminals: int
 
 
-def build_sequence_game(rules: Rules, node_limit: int = 0) -> SequenceGame:
+def build_sequence_game(rules: Rules, node_limit: int = 0, *, backend: str = "auto") -> SequenceGame:
+    """Enumerate the full game; native and Python backends preserve all histories."""
+    if backend not in ("auto", "native", "python"):
+        raise ValueError(f"Unknown enumeration backend: {backend}")
+    if node_limit < 0:
+        raise ValueError("node_limit must be nonnegative")
+    if backend != "python":
+        from sequence_form_native import NativeUnavailable, build_native
+        try:
+            return build_native(rules, make_root(rules), node_limit)
+        except NativeUnavailable as error:
+            if backend == "native":
+                raise
+            import warnings
+            warnings.warn(f"{error}; using the exact Python enumerator", RuntimeWarning)
+    return build_sequence_game_python(rules, node_limit)
+
+
+def build_sequence_game_python(rules: Rules, node_limit: int = 0) -> SequenceGame:
     """Enumerate the complete unabstracted extensive-form tree."""
     cat_o = SequenceCatalog(O)
     cat_x = SequenceCatalog(X)
@@ -304,11 +325,110 @@ def build_sequence_game(rules: Rules, node_limit: int = 0) -> SequenceGame:
     return SequenceGame(rules, cat_o, cat_x, payoff, histories, terminals)
 
 
+def best_response_value(catalog: SequenceCatalog, coefficients: np.ndarray, maximize: bool = False) -> float:
+    """Exactly optimize a linear objective over the full realization polytope.
+
+    Process information sets in reverse topological order. At an information
+    set all child continuation values are known; its best child contributes to
+    the parent sequence. Distinct infos sharing a parent contribute additively.
+    This dynamic program is independent of HiGHS and its dual potentials.
+    """
+    native = getattr(catalog, "best_response_value", None)
+    if native is not None:
+        return native(coefficients, maximize)
+    values = np.array(coefficients, dtype=float, copy=True)
+    if values.shape != (catalog.n_sequences,) or not np.isfinite(values).all():
+        raise ValueError("Invalid best-response coefficients")
+    select = max if maximize else min
+    for info in reversed(catalog.infos.values()):
+        values[info.parent_sequence] += select(values[child] for child in info.child_sequences)
+    if not np.isfinite(values[0]):
+        raise RuntimeError("Nonfinite best-response value")
+    return float(values[0])
+
+
+def _certify_realization_pair(
+    E: csr_matrix,
+    e: np.ndarray,
+    F: csr_matrix,
+    f: np.ndarray,
+    payoff_self: csr_matrix,
+    realization: np.ndarray,
+    opponent_realization: np.ndarray,
+    lower_potential: np.ndarray,
+    upper_potential: np.ndarray,
+    objective: float,
+    tolerance: float,
+    self_catalog: SequenceCatalog,
+    opp_catalog: SequenceCatalog,
+) -> Dict[str, float]:
+    """Check both original sequence-form LPs using their primal/dual witnesses.
+
+    A solver status alone is insufficient, especially after behavioral-policy
+    normalization. These sparse checks cover every sequence and constraint;
+    they do not sample states, prune strategies, or solve an approximate game.
+    """
+    if not np.isfinite(tolerance) or not 0 < tolerance <= FEASIBILITY_TOLERANCE:
+        raise ValueError(f"Certificate tolerance must be in (0, {FEASIBILITY_TOLERANCE}].")
+    for name, vector, length in (
+        ("realization", realization, E.shape[1]),
+        ("opponent realization", opponent_realization, F.shape[1]),
+        ("lower potential", lower_potential, F.shape[0]),
+        ("upper potential", upper_potential, E.shape[0]),
+    ):
+        if vector.shape != (length,) or not np.isfinite(vector).all():
+            raise RuntimeError(f"Invalid {name} in sequence-form certificate.")
+
+    def absolute_residual(values: np.ndarray) -> float:
+        return float(np.max(np.abs(values), initial=0.0))
+
+    def positive_residual(values: np.ndarray) -> float:
+        return float(np.maximum(0.0, np.max(values, initial=0.0)))
+
+    against_opponent = payoff_self @ opponent_realization
+    against_self = payoff_self.T @ realization
+    lower = float(f @ lower_potential)
+    upper = float(e @ upper_potential)
+    payoff = float(realization @ against_opponent)
+    best_lower = best_response_value(opp_catalog, against_self)
+    best_upper = best_response_value(self_catalog, against_opponent, maximize=True)
+    certificate = {
+        "tolerance": float(tolerance),
+        "selfFlowResidual": absolute_residual(E @ realization - e),
+        "opponentFlowResidual": absolute_residual(F @ opponent_realization - f),
+        "selfNonnegativityResidual": positive_residual(-realization),
+        "opponentNonnegativityResidual": positive_residual(-opponent_realization),
+        "lowerBoundResidual": positive_residual(F.T @ lower_potential - against_self),
+        "upperBoundResidual": positive_residual(against_opponent - E.T @ upper_potential),
+        "objectiveResidual": abs(lower - objective),
+        "dualityGap": upper - lower,
+        "payoff": payoff,
+        "payoffBoundsResidual": max(0.0, lower - payoff, payoff - upper),
+        "bestResponseLowerBound": best_lower,
+        "bestResponseUpperBound": best_upper,
+        "exploitabilityGap": best_upper - best_lower,
+        "bestResponseBoundsResidual": max(abs(best_lower - lower), abs(best_upper - upper)),
+    }
+    if not all(np.isfinite(value) for value in certificate.values()):
+        raise RuntimeError("Non-finite sequence-form certificate.")
+    failures = {
+        name: value for name, value in certificate.items()
+        if name not in ("tolerance", "payoff", "bestResponseLowerBound", "bestResponseUpperBound")
+        and abs(value) > tolerance
+    }
+    if failures:
+        detail = ", ".join(f"{name}={value:.3e}" for name, value in failures.items())
+        raise RuntimeError(
+            f"Sequence-form equilibrium certificate failed ({detail}; tolerance={tolerance:.1e})."
+        )
+    return certificate
+
+
 def solve_max_player(
     self_catalog: SequenceCatalog,
     opp_catalog: SequenceCatalog,
     payoff_self: csr_matrix,
-) -> Tuple[np.ndarray, float, object]:
+) -> Tuple[np.ndarray, float, OptimizeResult]:
     """Solve max_x min_y x^T A y in sequence form.
 
     max f^T p
@@ -316,6 +436,12 @@ def solve_max_player(
          F^T p <= A^T x.
 
     p is unrestricted. Native free bounds avoid duplicating its columns.
+
+    The inequality duals also give the opponent's optimal realization plan:
+    y = -result.ineqlin.marginals. Equality duals give upper-bound potentials
+    q = -result.eqlin.marginals, with F y = f and E^T q >= A y. Consequently
+    one primal-dual LP solves the full two-player equilibrium. The result keeps
+    these witnesses and a certificate; the original three-item API is retained.
     """
     E, e = self_catalog.realization_matrix()
     F, f = opp_catalog.realization_matrix()
@@ -323,12 +449,14 @@ def solve_max_player(
     n_p = opp_catalog.n_constraints
 
     A_eq = hstack(
-        [E, csr_matrix((E.shape[0], n_p), dtype=float)],
-        format="csr",
+        [E.tocsc(), csc_matrix((E.shape[0], n_p), dtype=float)],
+        format="csc",
     )
     b_eq = e
 
-    A_ub = hstack([-payoff_self.T, F.T], format="csr")
+    # HiGHS consumes CSC. Assemble in that format to avoid converting a full
+    # stacked CSR copy inside scipy.optimize.linprog.
+    A_ub = hstack([-payoff_self.T, F.T], format="csc")
     b_ub = np.zeros(opp_catalog.n_sequences, dtype=float)
 
     c = np.zeros(n_x + n_p, dtype=float)
@@ -346,34 +474,81 @@ def solve_max_player(
         b_eq=b_eq,
         bounds=bounds,
         method="highs",
-        options={"presolve": True},
+        options={
+            "presolve": True,
+            "primal_feasibility_tolerance": FEASIBILITY_TOLERANCE,
+            "dual_feasibility_tolerance": FEASIBILITY_TOLERANCE,
+        },
     )
     if not result.success:
         raise RuntimeError(f"HiGHS failed: {result.message}")
+    # The original sparse E/F/A suffice for certification; release the larger
+    # augmented solver matrices before allocating the validation products.
+    del A_eq, A_ub, bounds, c, b_ub
 
     realization = np.asarray(result.x[:n_x], dtype=float)
     value = -float(result.fun)
+    opponent_realization = -np.asarray(result.ineqlin.marginals, dtype=float)
+    lower_potential = np.asarray(result.x[n_x:], dtype=float)
+    upper_potential = -np.asarray(result.eqlin.marginals, dtype=float)
+    result.certificate = _certify_realization_pair(
+        E, e, F, f, payoff_self, realization, opponent_realization,
+        lower_potential, upper_potential, value, FEASIBILITY_TOLERANCE,
+        self_catalog, opp_catalog,
+    )
+    result.opponent_realization = opponent_realization
+    result.lower_bound = float(f @ lower_potential)
+    result.upper_bound = float(e @ upper_potential)
     return realization, value, result
+
+
+def solve_equilibrium(game: SequenceGame) -> Tuple[np.ndarray, np.ndarray, float, float, OptimizeResult]:
+    """Return both exact-game realization plans from one certified HiGHS solve."""
+    realization_o, _, result = solve_max_player(game.o, game.x, game.payoff)
+    return (realization_o, result.opponent_realization,
+            result.lower_bound, result.upper_bound, result)
+
+
+def certify_equilibrium(
+    game: SequenceGame,
+    realization_o: np.ndarray,
+    realization_x: np.ndarray,
+    result: OptimizeResult,
+    tolerance: float = FEASIBILITY_TOLERANCE,
+) -> Dict[str, float]:
+    """Recheck a pair, including reconstructed exported behavioral strategies.
+
+    ``result`` must be the successful O-oriented solve returned by
+    :func:`solve_equilibrium`. Its dual potentials independently bound the two
+    strategies; this needs sparse matrix products, not another optimization.
+    """
+    if not result.success:
+        raise RuntimeError("Cannot certify an unsuccessful LP solve.")
+    E, e = game.o.realization_matrix()
+    F, f = game.x.realization_matrix()
+    return _certify_realization_pair(
+        E, e, F, f, game.payoff,
+        np.asarray(realization_o, dtype=float), np.asarray(realization_x, dtype=float),
+        np.asarray(result.x[game.o.n_sequences:], dtype=float),
+        -np.asarray(result.eqlin.marginals, dtype=float),
+        -float(result.fun), tolerance, game.o, game.x,
+    )
 
 
 def behavioral_policy(
     catalog: SequenceCatalog,
     realization: np.ndarray,
-    tol: float = 1e-10,
+    tol: float = 0.0,
 ) -> Dict[str, Dict[str, float]]:
+    """Complete the support policy uniformly only at exactly unreachable infos."""
+    from sequence_form_lp_compact import compact_behavioral_policy
+    supported = compact_behavioral_policy(catalog, realization, tol)
     policy: Dict[str, Dict[str, float]] = {}
     for key, info in catalog.infos.items():
-        parent = realization[info.parent_sequence]
-        if parent > tol:
-            probs = np.maximum(0.0, realization[list(info.child_sequences)] / parent)
-            total = float(probs.sum())
-            if total > tol:
-                probs /= total
-            else:
-                probs[:] = 1.0 / len(info.actions)
+        if key in supported:
+            policy[key] = {str(action): supported[key].get(str(action), 0.0) for action in info.actions}
         else:
-            probs = np.full(len(info.actions), 1.0 / len(info.actions), dtype=float)
-        policy[key] = {str(a): float(p) for a, p in zip(info.actions, probs)}
+            policy[key] = {str(action): 1.0 / len(info.actions) for action in info.actions}
     return policy
 
 
@@ -391,6 +566,7 @@ def main() -> None:
     parser.add_argument("--hidden", type=parse_hidden, required=True, help="1-based mystery cells, e.g. 2,4")
     parser.add_argument("--start", choices=("O", "X"), default="O")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--enumerator", choices=("auto", "native", "python"), default="auto")
     parser.add_argument(
         "--node-limit",
         type=int,
@@ -402,18 +578,19 @@ def main() -> None:
     hidden_mask = sum(bit(move) for move in args.hidden)
     rules = Rules(hidden_mask=hidden_mask, start_player=O if args.start == "O" else X)
     print(f"Building exact sequence form for hidden={tuple(m + 1 for m in args.hidden)}, start={args.start}...")
-    game = build_sequence_game(rules, node_limit=args.node_limit)
+    game = build_sequence_game(rules, node_limit=args.node_limit, backend=args.enumerator)
     print(
         f"histories={game.histories:,}, terminals={game.terminals:,}, "
         f"O infos={len(game.o.infos):,}, X infos={len(game.x.infos):,}, "
         f"O sequences={game.o.n_sequences:,}, X sequences={game.x.n_sequences:,}"
     )
 
-    print("Solving O maximin LP...")
-    x_o, lower_o, result_o = solve_max_player(game.o, game.x, game.payoff)
-    print("Solving X maximin LP...")
-    x_x, lower_x, result_x = solve_max_player(game.x, game.o, -game.payoff.T.tocsr())
-    upper_o = -lower_x
+    print("Solving and certifying both players from one primal-dual LP...", flush=True)
+    x_o, x_x, lower_o, upper_o, result = solve_equilibrium(game)
+    from sequence_form_lp_compact import compact_policy_and_realization, write_artifact
+    _, exported_o = compact_policy_and_realization(game.o, x_o)
+    _, exported_x = compact_policy_and_realization(game.x, x_x)
+    certificate = certify_equilibrium(game, exported_o, exported_x, result)
     gap = max(0.0, upper_o - lower_o)
     value = 0.5 * (lower_o + upper_o)
 
@@ -429,7 +606,8 @@ def main() -> None:
         "lowerBoundO": lower_o,
         "upperBoundO": upper_o,
         "dualityGap": gap,
-        "numericallySolved": bool(result_o.success and result_x.success),
+        "numericallySolved": bool(result.success),
+        "certificate": certificate,
         "counts": {
             "histories": game.histories,
             "terminals": game.terminals,
@@ -451,8 +629,7 @@ def main() -> None:
         ],
     }
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(artifact, separators=(",", ":")), encoding="utf-8")
+    write_artifact(args.output, artifact)
     print(f"Wrote {args.output} ({args.output.stat().st_size / 1024 / 1024:.2f} MiB)")
     print(f"O value interval: [{lower_o:.12g}, {upper_o:.12g}]  gap={gap:.3e}")
 
