@@ -11,7 +11,11 @@
 
   function openHashPage() {
     const page = (window.location.hash || '').replace('#', '');
-    if (!['play', 'analysis', 'strategies', 'simulate', 'rules'].includes(page)) return;
+    if (!['play', 'analysis', 'strategies', 'nash', 'simulate', 'rules'].includes(page)) return;
+    if (page === 'nash' && window.TTNNashBenchmark?.openPage) {
+      window.TTNNashBenchmark.openPage();
+      return;
+    }
     const target = document.querySelector(`[data-page="${page}"]`);
     if (target) target.click();
   }
@@ -25,7 +29,9 @@
           if (window.TTNRoundRobinControls?.install) window.TTNRoundRobinControls.install();
           loadScript('./strategy-data.js', () => {
             loadScript('./strategy-guide.js', () => {
-              loadScript('./lp-strategy-extension.js', openHashPage);
+              loadScript('./lp-strategy-extension.js', () => {
+                loadScript('./nash-benchmark.js', openHashPage);
+              });
             });
           });
         });
