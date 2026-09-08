@@ -1,0 +1,8 @@
+/* Compatibility reset for properties inherited from the older UI layers.
+   Loaded after legacy styles and before site-refresh.css. */
+.primary-btn{width:auto;margin-top:0}
+.setup-panel .primary-btn{width:100%;margin-top:12px}
+.nav{max-width:none}
+.local-board.privacy-covered{filter:blur(12px);pointer-events:none;user-select:none}
+.home-actions .primary-btn,.home-actions .secondary-btn{width:auto;margin-top:0}
+@media(max-width:520px){.home-actions .primary-btn,.home-actions .secondary-btn{width:100%}}
