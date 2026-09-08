@@ -3,137 +3,227 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Tic-Tac-Nope: play, analyze, and simulate imperfect-information strategies including belief-state search, robust control, Thompson sampling, and MCCFR behavioral play." />
-  <meta name="theme-color" content="#f7f3ea" />
-  <title>Tic-Tac-Nope · Computational Game Theory Lab</title>
+  <meta name="description" content="Tic-Tac-Nope is an imperfect-information tic-tac-toe game and computational game-theory lab. Play locally, challenge AI strategies, use an AI coach, or inspect exact Nash equilibria." />
+  <meta name="theme-color" content="#f4f2ec" />
+  <title>Tic-Tac-Nope · Play & Game Theory Lab</title>
   <link rel="stylesheet" href="./styles.css" />
   <link rel="stylesheet" href="./theme2.css" />
   <link rel="stylesheet" href="./theme3.css" />
   <link rel="stylesheet" href="./game-theory.css" />
   <link rel="stylesheet" href="./simulation-heatmap.css" />
   <link rel="stylesheet" href="./revision-2026.css" />
+  <link rel="stylesheet" href="./site-refresh.css" />
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
-      <button class="brand" data-page="play" aria-label="Tic-Tac-Nope home"><span class="brand-mark" aria-hidden="true">?</span><span><strong>Tic-Tac-Nope</strong><small>computational game theory lab</small></span></button>
-      <nav class="nav" aria-label="Main navigation"><button class="nav-btn active" data-page="play">Play</button><button class="nav-btn" data-page="analysis">Analysis</button><button class="nav-btn" data-page="strategies">Strategies</button><button class="nav-btn" data-page="simulate">Simulation</button><button class="nav-btn" data-page="rules">Rules</button></nav>
+      <button class="brand" data-page="home" aria-label="Tic-Tac-Nope home">
+        <span class="brand-mark" aria-hidden="true">?</span>
+        <span><strong>Tic-Tac-Nope</strong><small>play · learn · solve</small></span>
+      </button>
+      <nav class="nav" aria-label="Main navigation">
+        <button class="nav-btn active" data-page="home">Home</button>
+        <button class="nav-btn" data-page="play">Play</button>
+        <button class="nav-btn" data-page="strategies">Strategies</button>
+        <button class="nav-btn" data-page="nash">Exact Nash</button>
+        <button class="nav-btn" data-page="analysis" data-nav-group="research">Lab</button>
+        <button class="nav-btn" data-page="rules">Rules</button>
+      </nav>
     </header>
 
     <main>
-      <section id="page-play" class="page active" aria-labelledby="play-title">
-        <div class="hero-row">
-          <div><p class="eyebrow">EXTENSIVE FORM · IMPERFECT INFORMATION · BEHAVIORAL STRATEGIES</p><h1 id="play-title">The board is small.<br><span>The strategy space is not.</span></h1><p class="lede">Choose how the opponent reasons: information-safe belief search, regret-matched behavioral play, worst-case hidden-state protection, Thompson sampling, or a random baseline.</p></div>
-          <div class="hero-chip" aria-hidden="true"><div class="mini-grid"><i>O</i><i>?</i><i></i><i></i><i>X</i><i></i><i>?</i><i></i><i>O</i></div></div>
-        </div>
-
-        <div class="play-layout theory-play-layout">
-          <aside class="panel setup-panel">
-            <div class="panel-heading"><div><p class="kicker">MATCH SETUP</p><h2>Choose the opponent</h2></div><span id="hidden-count-badge" class="pill">2 hidden</span></div>
-            <label class="field-label" for="ai-strategy">Opponent strategy</label>
-            <select id="ai-strategy" class="strategy-select"></select>
-            <div class="field-label row-label"><span>Turn order</span><small>you are O</small></div>
-            <div id="turn-order" class="segmented order-segmented" role="group" aria-label="Choose turn order">
-              <button class="segment active" data-order="first"><strong>First</strong><small>You open</small></button>
-              <button class="segment" data-order="second"><strong>Second</strong><small>Opponent Opens</small></button>
+      <section id="page-home" class="page active" aria-labelledby="home-title">
+        <div class="home-hero">
+          <div>
+            <p class="eyebrow">IMPERFECT INFORMATION · SMALL BOARD · DEEP STRATEGY</p>
+            <h1 id="home-title">Tic-tac-toe,<br><span>except you don’t know everything.</span></h1>
+            <p class="lede">Some cells hide who owns them. Play with a friend, challenge several AI strategies, ask an AI coach for help, or go all the way down to the exact sequence-form Nash equilibrium.</p>
+            <div class="home-actions">
+              <button class="primary-btn" data-start-mode="ai">Play against AI</button>
+              <button class="secondary-btn" data-start-mode="local">Play together</button>
+              <button class="ghost-btn" data-page="rules">How does the game work?</button>
             </div>
-            <div class="field-label row-label"><span>Mystery cells</span><small>choose at least 2</small></div>
-            <div id="hidden-picker" class="hidden-picker" aria-label="Choose mystery cells"></div>
-            <p id="setup-note" class="setup-note">Both players know which cells are mysterious. A fog action hides its location from the opponent.</p>
-            <button id="new-game" class="primary-btn">Start new game</button>
-          </aside>
-
-          <section class="panel board-panel">
-            <div class="game-status-row"><div><p class="kicker">LIVE MATCH</p><h2 id="status-title">Your turn · O</h2><p id="status-detail">Choose one action using only what you know.</p></div><div class="turn-token"><span id="turn-symbol">O</span><small>turn</small></div></div>
-            <div class="board-wrap"><div id="board" class="board" role="grid" aria-label="Tic-Tac-Nope board"></div><div id="thinking" class="thinking" hidden><span></span><span></span><span></span> Opponent is evaluating its strategy</div></div>
-            <div class="legend"><span><i class="dot you"></i>You are O</span><span><i class="dot ai"></i>Opponent is X</span><span><i class="dot fog"></i>Mystery cell</span></div>
-            <div id="move-message" class="move-message" aria-live="polite">Game ready.</div>
-          </section>
+          </div>
+          <div class="home-board" aria-hidden="true">
+            <div class="home-board-grid">
+              <i class="o">O</i><i class="fog">?</i><i></i>
+              <i></i><i class="x">X</i><i></i>
+              <i class="fog">?</i><i></i><i class="o">O</i>
+            </div>
+            <div class="home-board-note"><span>Visible board</span><strong>2 mystery cells</strong></div>
+          </div>
         </div>
 
-        <section class="panel combined-map-panel">
-          <div class="panel-heading decision-map-heading">
-            <div><p class="kicker">COMBINED DECISION MAP</p><h2>Score the next move with the strategy you choose</h2></div>
-            <div class="decision-strategy-control"><label for="decision-strategy">Next-move strategy</label><select id="decision-strategy" class="strategy-select"></select><span id="combined-score-scale" class="pill">score scale</span></div>
+        <div class="section-heading">
+          <div><p class="kicker">CHOOSE A WAY TO PLAY</p><h2>Start simple. Add theory when you want it.</h2></div>
+          <p>The same game engine powers every mode. What changes is who makes the moves and how much analysis is visible.</p>
+        </div>
+        <div class="journey-grid">
+          <button class="journey-card" data-start-mode="local">
+            <span class="journey-icon">2P</span><h3>Play together</h3>
+            <p>Pass-and-play on one computer. A privacy handoff covers the board between turns so hidden actions stay hidden.</p><small>Local two-player →</small>
+          </button>
+          <button class="journey-card" data-start-mode="ai">
+            <span class="journey-icon">AI</span><h3>Challenge an AI</h3>
+            <p>Pick a strategy, choose the mystery cells, and play a clean match without research panels competing for attention.</p><small>Play vs AI →</small>
+          </button>
+          <button class="journey-card" data-start-mode="coach">
+            <span class="journey-icon">+</span><h3>Play with a coach</h3>
+            <p>You still make every move. The coach scores your legal actions and can open deeper information-state and forecast views.</p><small>AI-assisted play →</small>
+          </button>
+        </div>
+
+        <div class="section-heading">
+          <div><p class="kicker">GO DEEPER</p><h2>From intuition to equilibrium.</h2></div>
+          <p>The research side is separated from ordinary play so each page can answer one question well.</p>
+        </div>
+        <div class="explore-grid">
+          <article class="explore-card"><p class="kicker">LEARN</p><h3>How do the strategies think?</h3><p>Compare belief search, robust control, Thompson sampling, MCCFR behavior, exact LP play, and the omniscient benchmark.</p><button class="secondary-btn" data-page="strategies">Open strategy guide</button></article>
+          <article class="explore-card"><p class="kicker">GAME THEORY</p><h3>What is the exact Nash value?</h3><p>Read certified first- and second-player values, duality gaps, equilibrium action probabilities, and empirical security tests.</p><button class="secondary-btn" data-page="nash">Open Exact Nash</button></article>
+          <article class="explore-card"><p class="kicker">EXPERIMENT</p><h3>What happens across many games?</h3><p>Inspect a live information set or run strategy-vs-strategy simulation experiments in the research lab.</p><button class="secondary-btn" data-page="analysis">Open the lab</button></article>
+        </div>
+      </section>
+
+      <section id="page-play" class="page" aria-labelledby="play-title">
+        <div class="page-head">
+          <div><p class="eyebrow">PLAY</p><h1 id="play-title">Choose how you want to play.</h1><p class="lede">The rules stay the same. Switch between local pass-and-play, a clean AI match, or an AI-assisted match with decision support.</p></div>
+          <button class="secondary-btn" data-page="rules">Rules</button>
+        </div>
+
+        <div id="play-mode-grid" class="play-mode-grid" role="group" aria-label="Play mode">
+          <button class="play-mode-card" data-play-mode="local"><span>2P</span><div><strong>Local two-player</strong><small>Privacy handoff between turns</small></div></button>
+          <button class="play-mode-card active" data-play-mode="ai"><span>AI</span><div><strong>Play vs AI</strong><small>Clean game view</small></div></button>
+          <button class="play-mode-card" data-play-mode="coach"><span>+</span><div><strong>AI + Coach</strong><small>Move scores and optional deep analysis</small></div></button>
+        </div>
+
+        <div id="ai-play-shell">
+          <div class="play-layout theory-play-layout">
+            <aside class="panel setup-panel">
+              <div class="panel-heading"><div><p class="kicker">GAME SETUP</p><h2>Configure the match</h2></div><span id="hidden-count-badge" class="pill">2 hidden</span></div>
+              <label class="field-label" for="ai-strategy">AI opponent</label>
+              <select id="ai-strategy" class="strategy-select"></select>
+              <div class="field-label row-label"><span>Turn order</span><small>you are O</small></div>
+              <div id="turn-order" class="segmented order-segmented" role="group" aria-label="Choose turn order">
+                <button class="segment active" data-order="first"><strong>You go first</strong><small>O opens</small></button>
+                <button class="segment" data-order="second"><strong>AI goes first</strong><small>X opens</small></button>
+              </div>
+              <div class="field-label row-label"><span>Mystery cells</span><small>choose at least 2</small></div>
+              <div id="hidden-picker" class="hidden-picker" aria-label="Choose mystery cells"></div>
+              <p id="setup-note" class="setup-note">Both players know which cells are mysterious. A fog action hides its location from the opponent.</p>
+              <button id="new-game" class="primary-btn">Start new game</button>
+            </aside>
+
+            <section class="panel board-panel">
+              <div class="game-status-row"><div><p class="kicker">LIVE MATCH</p><h2 id="status-title">Your turn · O</h2><p id="status-detail">Choose one action using only what you know.</p></div><div class="turn-token"><span id="turn-symbol">O</span><small>turn</small></div></div>
+              <div class="board-wrap"><div id="board" class="board" role="grid" aria-label="Tic-Tac-Nope board"></div><div id="thinking" class="thinking" hidden><span></span><span></span><span></span> AI is choosing a move</div></div>
+              <div class="legend"><span><i class="dot you"></i>You · O</span><span><i class="dot ai"></i>AI · X</span><span><i class="dot fog"></i>Mystery cell</span></div>
+              <div id="move-message" class="move-message" aria-live="polite">Game ready.</div>
+            </section>
           </div>
-          <p id="combined-strategy-summary" class="muted">Choose a strategy to score every legal action.</p>
-          <div id="combined-value-map" class="combined-value-map" aria-label="Strategy-specific action scores"></div>
-        </section>
 
-        <section class="panel play-analysis-panel">
-          <div class="panel-heading"><div><p class="kicker">INFORMATION-STATE VIEW</p><h2>Possible histories under the same selected strategy</h2></div><span id="play-world-prob" class="pill">100% equal-weight each</span></div>
-          <p class="muted">Every board below is compatible with what you currently know. When the selected strategy has world-specific utility or history weights, those are shown beside the board; information-set behavioral policies remain identical across indistinguishable histories.</p>
-          <div id="play-info-states" class="info-state-grid"></div>
-        </section>
+          <div id="coach-shell" class="coach-shell" hidden>
+            <div class="coach-intro"><div><p class="kicker">AI COACH</p><h2>Decision support without taking the move away from you.</h2><p>Choose which strategy should advise you. The board below scores every legal action from your current information set.</p></div><button id="coach-advanced-toggle" class="secondary-btn">Show deeper analysis</button></div>
+            <section class="panel combined-map-panel">
+              <div class="panel-heading decision-map-heading">
+                <div><p class="kicker">COACH RECOMMENDATION</p><h2>Compare your legal moves</h2></div>
+                <div class="decision-strategy-control"><label for="decision-strategy">Coaching strategy</label><select id="decision-strategy" class="strategy-select"></select><span id="combined-score-scale" class="pill">score scale</span></div>
+              </div>
+              <p id="combined-strategy-summary" class="muted">Choose a strategy to score every legal action.</p>
+              <div id="combined-value-map" class="combined-value-map" aria-label="Strategy-specific action scores"></div>
+            </section>
 
-        <section class="panel timeline-panel">
-          <div class="panel-heading"><div><p class="kicker">MATCH TIMELINE</p><h2>Board and win / tie / loss forecast after every observation</h2></div><span id="timeline-strategy-label" class="pill">selected strategy forecast</span></div>
-          <p class="muted">Forecasts use the selected next-move strategy for you and the configured opponent strategy for X while preserving each player’s information constraints. Equal-history strategies use equal compatible-history weights; MCCFR and regret-weighted Thompson use regret-policy reach weights. These are Monte Carlo outcome estimates, not equilibrium certificates.</p>
-          <div id="confidence-timeline" class="confidence-timeline"></div>
-          <div id="truth-reveal" class="truth-reveal" hidden></div>
-        </section>
+            <section class="panel play-analysis-panel coach-advanced" hidden>
+              <div class="panel-heading"><div><p class="kicker">INFORMATION-STATE VIEW</p><h2>Histories that still fit what you know</h2></div><span id="play-world-prob" class="pill">100% equal-weight each</span></div>
+              <p class="muted">Each board is compatible with your observations. Strategy-specific values are shown without exposing the true hidden board.</p>
+              <div id="play-info-states" class="info-state-grid"></div>
+            </section>
+
+            <section class="panel timeline-panel coach-advanced" hidden>
+              <div class="panel-heading"><div><p class="kicker">MATCH TIMELINE</p><h2>How the forecast changed as information arrived</h2></div><span id="timeline-strategy-label" class="pill">selected strategy forecast</span></div>
+              <p class="muted">Forecasts are Monte Carlo estimates under the selected strategies, not equilibrium certificates.</p>
+              <div id="confidence-timeline" class="confidence-timeline"></div>
+              <div id="truth-reveal" class="truth-reveal" hidden></div>
+            </section>
+          </div>
+        </div>
+
+        <div id="local-play-shell" hidden>
+          <div class="local-play-layout">
+            <aside class="panel setup-panel">
+              <div class="panel-heading"><div><p class="kicker">LOCAL GAME</p><h2>Pass-and-play setup</h2></div><span id="local-hidden-count" class="pill">2 hidden</span></div>
+              <div class="field-label row-label"><span>Who opens?</span><small>O and X are both human</small></div>
+              <div class="segmented" role="group" aria-label="Choose local starting player">
+                <button class="segment active" data-local-order="O"><strong>O goes first</strong><small>Player O opens</small></button>
+                <button class="segment" data-local-order="X"><strong>X goes first</strong><small>Player X opens</small></button>
+              </div>
+              <div class="field-label row-label"><span>Mystery cells</span><small>choose at least 2</small></div>
+              <div id="local-hidden-picker" class="hidden-picker" aria-label="Choose local mystery cells"></div>
+              <p id="local-setup-note" class="setup-note">The screen will cover the board between turns. Hand the computer over before the next player presses Ready.</p>
+              <button id="local-new-game" class="primary-btn">Start local game</button>
+              <div class="local-privacy-note"><strong>Privacy rule:</strong> after a mystery attempt, the acting player is not told whether it succeeded. The next player sees only the observations they are entitled to see.</div>
+            </aside>
+
+            <section class="panel board-panel">
+              <div class="game-status-row"><div><p class="kicker">PASS & PLAY</p><h2 id="local-status-title">Start a local game</h2><p id="local-status-detail">Two players can share this computer without revealing hidden actions.</p></div><div class="turn-token"><span id="local-turn-symbol">•</span><small>turn</small></div></div>
+              <div class="local-board-wrap">
+                <div id="local-board" class="local-board" role="grid" aria-label="Local Tic-Tac-Nope board"></div>
+                <div id="local-handoff" class="local-handoff" hidden>
+                  <div class="local-handoff-card"><div id="local-handoff-symbol" class="handoff-symbol">O</div><h3 id="local-handoff-title">Pass to Player O</h3><p id="local-handoff-copy">Make sure only Player O is looking at the screen, then continue.</p><button id="local-ready" class="primary-btn">I’m ready</button></div>
+                </div>
+              </div>
+              <div class="legend"><span><i class="dot you"></i>Player O</span><span><i class="dot ai"></i>Player X</span><span><i class="dot fog"></i>Mystery cell</span></div>
+              <div id="local-message" class="move-message" aria-live="polite">Choose settings, then start a local game.</div>
+            </section>
+          </div>
+        </div>
       </section>
 
       <section id="page-analysis" class="page" aria-labelledby="analysis-title">
-        <div class="page-head"><div><p class="eyebrow">THE UNCERTAINTY LAB</p><h1 id="analysis-title">Put every strategy on the same live position.</h1><p class="lede">Keep the exact match context, then compare each strategy’s next-move board and its own mathematically appropriate score scale.</p></div><button class="secondary-btn" data-page="play">Back to game</button></div>
+        <div class="page-head"><div><p class="eyebrow">RESEARCH LAB</p><h1 id="analysis-title">Inspect one information set.</h1><p class="lede">Use the current game position to compare what each strategy recommends without pretending that unlike score types are the same quantity.</p></div><button class="secondary-btn" data-page="play">Back to game</button></div>
+        <div class="research-tabs" role="navigation" aria-label="Research sections"><button class="active" data-page="analysis">Position Lab</button><button data-page="nash">Exact Nash</button><button data-page="simulate">Strategy Arena</button></div>
 
         <div class="analysis-context-grid">
-          <aside class="panel setup-panel analysis-context-panel">
-            <div class="panel-heading"><div><p class="kicker">MATCH SETUP</p><h2>Current configuration</h2></div></div>
-            <div id="analysis-match-setup" class="analysis-match-setup"></div>
-          </aside>
-          <section class="panel board-panel analysis-context-panel">
-            <div class="game-status-row"><div><p class="kicker">LIVE MATCH</p><h2 id="analysis-live-title">Your turn · O</h2><p id="analysis-live-detail">Current observed board.</p></div></div>
-            <div id="analysis-live-board" class="analysis-live-board" aria-label="Read-only current board"></div>
-          </section>
+          <aside class="panel setup-panel analysis-context-panel"><div class="panel-heading"><div><p class="kicker">CURRENT GAME</p><h2>Configuration</h2></div></div><div id="analysis-match-setup" class="analysis-match-setup"></div></aside>
+          <section class="panel board-panel analysis-context-panel"><div class="game-status-row"><div><p class="kicker">OBSERVED POSITION</p><h2 id="analysis-live-title">Your turn · O</h2><p id="analysis-live-detail">Current observed board.</p></div></div><div id="analysis-live-board" class="analysis-live-board" aria-label="Read-only current board"></div></section>
         </div>
 
-        <section class="panel analysis-training-panel">
-          <div class="analysis-training-copy"><p class="kicker">MCCFR TRAINING</p><h2>Train the behavioral policy to a serious browser-scale baseline</h2><p class="muted">Analysis automatically targets 100,000 outcome-sampling MCCFR iterations for the current mystery-cell/start-player configuration. Training runs in chunks so the browser can repaint between updates.</p></div>
-          <div class="analysis-training-metrics"><span>Current <strong id="analysis-iters">0</strong></span><span>Target <strong id="analysis-target">100,000</strong></span><button id="train-more" class="secondary-btn compact">Train +100,000</button></div>
-          <div class="analysis-training-track" aria-hidden="true"><i id="analysis-training-progress"></i></div>
-          <small id="analysis-training-status">not started</small>
-        </section>
+        <section class="panel analysis-training-panel"><div class="analysis-training-copy"><p class="kicker">MCCFR TRAINING</p><h2>Improve the browser-scale behavioral reference</h2><p class="muted">The position lab targets 100,000 outcome-sampling MCCFR iterations for the current configuration. Exact Nash results live on their own certified LP page.</p></div><div class="analysis-training-metrics"><span>Current <strong id="analysis-iters">0</strong></span><span>Target <strong id="analysis-target">100,000</strong></span><button id="train-more" class="secondary-btn compact">Train +100,000</button></div><div class="analysis-training-track" aria-hidden="true"><i id="analysis-training-progress"></i></div><small id="analysis-training-status">not started</small></section>
 
-        <section class="analysis-strategy-section">
-          <div class="analysis-section-head"><p class="kicker">STRATEGY-BY-STRATEGY DECISION MAPS</p><h2>Optimal move and score for every strategy</h2><p class="muted">Utility strategies use −1 / 0 / +1 continuation utility. Stochastic behavioral or sampling strategies use 0–100% action probability. The Oracle is included as a clearly labeled omniscient benchmark; its scores use the true hidden board and can spoil live information.</p></div>
-          <div id="analysis-strategy-boards" class="analysis-strategy-boards"></div>
-        </section>
+        <section class="analysis-strategy-section"><div class="analysis-section-head"><p class="kicker">DECISION MAPS</p><h2>What does each strategy recommend here?</h2><p class="muted">Utility strategies use −1 / 0 / +1 continuation utility. Behavioral strategies display action probability. Oracle uses the true hidden board and is explicitly marked as omniscient.</p></div><div id="analysis-strategy-boards" class="analysis-strategy-boards"></div></section>
       </section>
 
       <section id="page-strategies" class="page" aria-labelledby="strategies-title">
-        <div class="page-head"><div><p class="eyebrow">STRATEGY THEORY</p><h1 id="strategies-title">Strategy reference</h1><p class="lede">A continuous theory document covering assumptions, objectives, guarantees, limitations, and references.</p></div><button class="secondary-btn" data-page="play">Try them</button></div>
+        <div class="page-head"><div><p class="eyebrow">STRATEGY GUIDE</p><h1 id="strategies-title">How does each player think?</h1><p class="lede">Start with assumptions and intuition, then drill into objectives, guarantees, limitations, and the underlying game theory.</p></div><button class="secondary-btn" data-start-mode="coach">Try with a coach</button></div>
         <div id="strategy-cards" class="strategy-document"></div>
       </section>
 
       <section id="page-simulate" class="page" aria-labelledby="simulate-title">
-        <div class="page-head"><div><p class="eyebrow">STRATEGY ARENA</p><h1 id="simulate-title">Run the full round robin.</h1><p class="lede">Compare every strategy under the same mystery-cell configuration. Each round is a balanced pair of games: once with O opening and once with X opening.</p></div><button class="secondary-btn" data-page="strategies">Read theory</button></div>
+        <div class="page-head"><div><p class="eyebrow">RESEARCH LAB</p><h1 id="simulate-title">Run the strategy arena.</h1><p class="lede">Compare strategies over many games under the same mystery-cell configuration. Each balanced round includes both possible opening symbols.</p></div><button class="secondary-btn" data-page="strategies">Read strategy guide</button></div>
+        <div class="research-tabs" role="navigation" aria-label="Research sections"><button data-page="analysis">Position Lab</button><button data-page="nash">Exact Nash</button><button class="active" data-page="simulate">Strategy Arena</button></div>
+        <div id="simulation-config"></div>
 
         <section class="panel round-robin-panel simulation-section" aria-labelledby="round-robin-title">
-          <div class="panel-heading round-robin-heading">
-            <div><p class="kicker">ROUND ROBIN</p><h2 id="round-robin-title">See every strategy matchup at once</h2><p class="muted">Each row is the O strategy and each column is the X strategy. Choose the number of balanced rounds per matchup, then compare O’s empirical score across the entire field.</p></div>
-            <div class="round-robin-actions"><span class="pill">O score = win + 0.5 draw</span><button id="run-round-robin" class="secondary-btn">Run round robin</button></div>
-          </div>
+          <div class="panel-heading round-robin-heading"><div><p class="kicker">ROUND ROBIN</p><h2 id="round-robin-title">Every strategy matchup at once</h2><p class="muted">Rows are O strategies and columns are X strategies. The heatmap reports O’s empirical score.</p></div><div class="round-robin-actions"><span class="pill">O score = win + 0.5 draw</span><button id="run-round-robin" class="secondary-btn">Run round robin</button></div></div>
           <div class="heat-legend" aria-label="Round-robin heatmap legend"><span>O weaker</span><i class="heat-swatch heat-very-low"></i><i class="heat-swatch heat-low"></i><i class="heat-swatch heat-neutral"></i><i class="heat-swatch heat-high"></i><i class="heat-swatch heat-very-high"></i><span>O stronger</span></div>
           <div id="round-robin" class="round-robin"><p class="muted">Run the round robin to generate the cross-strategy heatmap.</p></div>
         </section>
       </section>
 
       <section id="page-rules" class="page" aria-labelledby="rules-title">
-        <div class="page-head"><div><p class="eyebrow">HOW TO PLAY</p><h1 id="rules-title">The rules of Tic-Tac-Nope.</h1><p class="lede">It is tic-tac-toe with hidden ownership on designated mystery cells. The true board decides the game; players only act on what they have observed.</p></div><button class="secondary-btn" data-page="play">Play now</button></div>
+        <div class="page-head"><div><p class="eyebrow">RULES</p><h1 id="rules-title">Tic-tac-toe with hidden ownership.</h1><p class="lede">The board locations that are mysterious are public. Their ownership—and the result of a mystery attempt—may not be.</p></div><button class="primary-btn" data-start-mode="ai">Play now</button></div>
         <div class="rules-flow">
-          <article class="rule-card"><span>01</span><h2>Make three in a row</h2><p>O and X alternate turns. As in ordinary tic-tac-toe, the first player with three owned cells in a row, column, or diagonal wins.</p></article>
-          <article class="rule-card"><span>02</span><h2>Some cells are mysterious</h2><p>Before play begins, certain board locations are designated as mystery cells and both players know which locations those are. What is hidden is who actually owns them during play.</p></article>
-          <article class="rule-card"><span>03</span><h2>Normal cells behave normally</h2><p>On a visible cell, a player may claim an empty location. The move and location are public, and an already occupied visible cell cannot be chosen.</p></article>
-          <article class="rule-card"><span>04</span><h2>A mystery move hides its location</h2><p>When a player acts on a mystery cell, the opponent learns only that a fog action occurred. The opponent is not told which mystery cell was attempted.</p></article>
-          <article class="rule-card"><span>05</span><h2>Mystery attempts can fail silently</h2><p>If the attempted mystery cell is empty, the acting player claims it. If the opponent already owns it, the attempt fails and still consumes the turn. The acting player receives no direct success-or-failure signal; ownership is known only when it can be inferred from the observations available to that player.</p></article>
-          <article class="rule-card"><span>06</span><h2>You may probe each mystery cell once</h2><p>Each player may attempt a particular mystery cell at most once. Players remember which mystery cells they personally attempted, but they do not receive or remember a separate success-or-failure result.</p></article>
-          <article class="rule-card"><span>07</span><h2>The true board ends the game</h2><p>After every successful claim, victory is checked on the underlying board—including hidden ownership. If the board fills with no three-in-a-row, the game is a draw. At the end, the true board is revealed.</p></article>
+          <article class="rule-card"><span>01</span><h2>Make three in a row</h2><p>O and X alternate turns. The first player with three owned cells in a row, column, or diagonal wins.</p></article>
+          <article class="rule-card"><span>02</span><h2>Mystery locations are public</h2><p>Before play, both players know which board locations are mystery cells. What can remain hidden is who actually owns them.</p></article>
+          <article class="rule-card"><span>03</span><h2>Visible cells are ordinary</h2><p>Claim an empty visible cell normally. The move and location are public, and an occupied visible cell cannot be chosen.</p></article>
+          <article class="rule-card"><span>04</span><h2>A fog action hides its location</h2><p>When a player acts on a mystery cell, the opponent learns only that a fog action happened—not which mystery cell was attempted.</p></article>
+          <article class="rule-card"><span>05</span><h2>A mystery attempt can fail silently</h2><p>If the cell is empty, the acting player claims it. If the opponent owns it, the attempt fails and still consumes the turn. The acting player receives no direct success/failure signal.</p></article>
+          <article class="rule-card"><span>06</span><h2>You may probe each mystery cell once</h2><p>Each player may attempt a particular mystery cell at most once. Players remember which mystery locations they personally attempted.</p></article>
+          <article class="rule-card"><span>07</span><h2>The true board decides the game</h2><p>Victory is checked on the underlying board after each successful claim. When the game ends, the true hidden board is revealed.</p></article>
         </div>
       </section>
     </main>
 
-    <footer><span>Tic-Tac-Nope</span><span>Extensive-form play · behavioral strategies · simulation.</span></footer>
+    <footer><span>Tic-Tac-Nope</span><span>Play locally · challenge strategies · inspect imperfect information · certify equilibrium.</span></footer>
   </div>
 
   <script src="./game_theory_engine.js"></script>
