@@ -58,6 +58,26 @@ jobs:
           print(f'HTML integrity OK: {len(ids)} unique ids and local assets resolved.')
           PY
 
+      - name: Render critical pages in headless Chrome
+        run: |
+          python -m http.server 8765 -d web >/tmp/ttn-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          for _ in {1..20}; do
+            if curl -fsS http://127.0.0.1:8765/ >/dev/null; then break; fi
+            sleep 0.25
+          done
+          BROWSER="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$BROWSER"
+          "$BROWSER" --headless --no-sandbox --disable-gpu --virtual-time-budget=10000 --dump-dom 'http://127.0.0.1:8765/#home' >/tmp/home.html 2>/tmp/home-browser.log
+          grep -q 'Tic-tac-toe' /tmp/home.html
+          grep -q 'Play together' /tmp/home.html
+          "$BROWSER" --headless --no-sandbox --disable-gpu --virtual-time-budget=12000 --dump-dom 'http://127.0.0.1:8765/#strategies' >/tmp/strategies.html 2>/tmp/strategies-browser.log
+          grep -q 'How each strategy thinks.' /tmp/strategies.html
+          "$BROWSER" --headless --no-sandbox --disable-gpu --virtual-time-budget=12000 --dump-dom 'http://127.0.0.1:8765/#nash' >/tmp/nash.html 2>/tmp/nash-browser.log
+          grep -q 'The exact Nash equilibrium.' /tmp/nash.html
+          grep -q 'FIRST PLAYER' /tmp/nash.html
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
