@@ -62,8 +62,8 @@
   const pageHead = document.querySelector('#page-strategies .page-head');
   const title = pageHead?.querySelector('h1');
   const lede = pageHead?.querySelector('.lede');
-  if (title) title.textContent = 'Strategy reference';
-  if (lede) lede.textContent = 'A single continuous theory page: assumptions, objective, guarantees, failure modes, computational cost, and references for every strategy used in the lab.';
+  if (title) title.textContent = 'How each strategy thinks.';
+  if (lede) lede.textContent = 'Compare assumptions, objectives, guarantees, failure modes, computational cost, and references—from practical heuristics to scalable approximate equilibrium play and the certified exact benchmark.';
 
   root.className = 'strategy-document';
   root.innerHTML = `${renderOverview()}${renderContents()}${order.map(renderStrategySection).join('')}${renderClosingNotes()}`;
@@ -75,7 +75,7 @@
         <h2>Strategies act on information sets, not on the hidden true node.</h2>
         <p>Tic-Tac-Nope is a finite two-player zero-sum extensive-form game with imperfect information. A player’s information state contains the complete sequence of public moves, observed opponent fog events, and that player’s own mystery-cell attempt locations. A mystery attempt does not reveal a separate success/failure result; hidden ownership is known only when it is logically implied by the player’s observation history.</p>
         <p>Because nobody forgets an action or observation they previously knew, the implemented game has <strong>perfect recall</strong>. That fact is critical: by <strong>Kuhn’s theorem</strong>, in a perfect-recall extensive game a normal-form mixed strategy over complete pure contingency plans has an outcome-equivalent <strong>behavioral strategy</strong> that randomizes locally as <code>σ(a|I)</code>. That is why MCCFR stores action probabilities at information sets rather than attempting to enumerate enormous complete plans.</p>
-        <blockquote><strong>“Best” depends on the question.</strong> If the goal is minimax security against an unknown strategic opponent, Regret-Matched Behavioral (MCCFR) is the strongest theoretical default here. A model-based heuristic can outperform it against a particular weak opponent, but that is exploitative performance rather than a universal dominance guarantee.</blockquote>
+        <blockquote><strong>“Best” depends on the question.</strong> When a certified Exact Nash sequence-form LP artifact exists for a configuration, it is the ground-truth minimax benchmark. MCCFR is the scalable approximate-equilibrium method and is useful for studying convergence or configurations where an exact artifact is not available. Heuristics may outperform either equilibrium strategy against a particular weak opponent, but that is exploitative performance rather than a universal security guarantee.</blockquote>
       </section>`;
   }
 
