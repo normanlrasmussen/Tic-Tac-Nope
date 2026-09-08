@@ -1,6 +1,14 @@
 (function () {
   'use strict';
 
+  function loadStyle(href) {
+    if (document.querySelector(`link[href="${href}"]`)) return;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = href;
+    document.head.appendChild(link);
+  }
+
   function loadScript(src, onload) {
     const script = document.createElement('script');
     script.src = src;
@@ -21,6 +29,8 @@
       || document.querySelector(`[data-page="${page}"]`);
     if (target) target.click();
   }
+
+  loadStyle('./legacy-reset.css');
 
   loadScript('./strategy-research-update.js', () => {
     loadScript('./app4-core.js', () => {
