@@ -39,6 +39,24 @@ jobs:
           grep -q 'id="page-home"' web/index.html
           grep -q 'id="local-board"' web/index.html
           grep -q 'id="simulation-config"' web/index.html
+          test -f web/site-refresh.css
+          test -f web/legacy-reset.css
+          python - <<'PY'
+          import pathlib, re
+          html = pathlib.Path('web/index.html').read_text()
+          ids = re.findall(r'\bid="([^"]+)"', html)
+          duplicates = sorted({value for value in ids if ids.count(value) > 1})
+          if duplicates:
+              raise SystemExit(f'Duplicate HTML ids: {duplicates}')
+          for attr, target in re.findall(r'\b(src|href)="(\./[^"]+)"', html):
+              clean = target.split('#', 1)[0].split('?', 1)[0]
+              if not clean or clean.endswith('/'):
+                  continue
+              path = pathlib.Path('web') / clean.removeprefix('./')
+              if not path.exists():
+                  raise SystemExit(f'Missing local asset referenced by {attr}: {target}')
+          print(f'HTML integrity OK: {len(ids)} unique ids and local assets resolved.')
+          PY
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
