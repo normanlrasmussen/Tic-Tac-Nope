@@ -35,6 +35,10 @@ jobs:
           node --check web/app4-core.js
           node --check web/lp-strategy-extension.js
           node --check web/nash-benchmark.js
+          node --check web/ux-refresh.js
+          grep -q 'id="page-home"' web/index.html
+          grep -q 'id="local-board"' web/index.html
+          grep -q 'id="simulation-config"' web/index.html
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
