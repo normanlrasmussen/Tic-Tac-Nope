@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Validate game-theory engine and static browser code
         run: |
@@ -76,7 +76,7 @@ jobs:
           grep -q 'How each strategy thinks.' /tmp/strategies.html
           "$BROWSER" --headless --no-sandbox --disable-gpu --virtual-time-budget=12000 --dump-dom 'http://127.0.0.1:8765/#nash' >/tmp/nash.html 2>/tmp/nash-browser.log
           grep -q 'The exact Nash equilibrium.' /tmp/nash.html
-          grep -q 'FIRST PLAYER' /tmp/nash.html
+          grep -q 'class="nash-number"' /tmp/nash.html
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
