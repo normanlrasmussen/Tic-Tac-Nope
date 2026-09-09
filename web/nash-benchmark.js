@@ -17,7 +17,7 @@
     const style = document.createElement('style');
     style.id = 'nash-benchmark-styles';
     style.textContent = `
-      .nash-value-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:22px 0}
+      .nash-value-grid{display:grid;grid-template-columns:1fr;gap:18px;margin:22px 0}
       .nash-value-card{padding:22px;border:1px solid var(--line,#d8d1c4);border-radius:18px;background:var(--panel,#fffdf8)}
       .nash-value-card .nash-number{font-size:clamp(2rem,5vw,4rem);line-height:1;font-weight:800;letter-spacing:-.05em;margin:10px 0}
       .nash-value-card small{display:block;color:var(--muted,#6f6a61);line-height:1.5}
@@ -82,10 +82,10 @@
 
       <section class="panel" aria-labelledby="nash-values-title">
         <div class="panel-heading">
-          <div><p class="kicker">GAME VALUE</p><h2 id="nash-values-title">First-player and second-player equilibrium utility</h2></div>
+          <div><p class="kicker">GAME VALUE</p><h2 id="nash-values-title">Equilibrium game value</h2></div>
           <span id="nash-config" class="pill nash-config-chip">Reading current setup…</span>
         </div>
-        <p class="muted">Utility is +1 for a win, 0 for a draw, and −1 for a loss. A Nash value is expected utility, not a win percentage. Values below are role-normalized across O-opening and X-opening versions of the same game.</p>
+        <p class="muted">Utility is +1 for a win, 0 for a draw, and −1 for a loss. The displayed Nash value is the equilibrium expected utility of the player who moves first. Because the game is zero-sum, the second player's value is exactly its negative. O/X relabeling is checked numerically below rather than displayed as separate values.</p>
         <div id="nash-values-body"><div class="nash-empty muted">Waiting for exact LP artifacts…</div></div>
       </section>
 
@@ -194,22 +194,9 @@
     body.innerHTML = `
       <div class="nash-value-grid">
         <article class="nash-value-card">
-          <p class="kicker">FIRST PLAYER</p>
+          <p class="kicker">FIRST-PLAYER GAME VALUE</p>
           <div class="nash-number">${fmt(values.firstValue)}</div>
-          <small>Certified equilibrium expected utility for the player who opens.</small>
-          <div class="nash-certificate-grid">
-            <div class="nash-certificate"><span>O opens</span><strong>${fmt(values.firstO)}</strong></div>
-            <div class="nash-certificate"><span>X opens</span><strong>${fmt(values.firstX)}</strong></div>
-          </div>
-        </article>
-        <article class="nash-value-card">
-          <p class="kicker">SECOND PLAYER</p>
-          <div class="nash-number">${fmt(values.secondValue)}</div>
-          <small>Certified equilibrium expected utility for the player who moves second.</small>
-          <div class="nash-certificate-grid">
-            <div class="nash-certificate"><span>X is second</span><strong>${fmt(values.secondX)}</strong></div>
-            <div class="nash-certificate"><span>O is second</span><strong>${fmt(values.secondO)}</strong></div>
-          </div>
+          <small>Certified equilibrium expected utility for the player who opens. The second player's equilibrium utility is ${fmt(values.secondValue)} = −v by zero-sum symmetry.</small>
         </article>
       </div>
       <div class="nash-certificate-grid">
