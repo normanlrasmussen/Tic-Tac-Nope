@@ -34,6 +34,7 @@ jobs:
           node --check web/app4.js
           node --check web/app4-core.js
           node --check web/lp-strategy-extension.js
+          node --check web/lp-first-ordering.js
           node --check web/best-tie-highlights.js
           node --check web/coach-all-strategies.js
           node --check web/nash-benchmark.js
@@ -77,6 +78,23 @@ jobs:
           "$BROWSER" --headless --no-sandbox --disable-gpu --virtual-time-budget=12000 --dump-dom 'http://127.0.0.1:8765/#play' >/tmp/play.html 2>/tmp/play-browser.log
           grep -q 'All · compare every strategy' /tmp/play.html
           ! grep -q 'Position Lab' /tmp/play.html
+          python - <<'PY'
+          import pathlib
+          html = pathlib.Path('/tmp/play.html').read_text()
+          decision_start = html.index('id="decision-strategy"')
+          decision_end = html.index('</select>', decision_start)
+          decision = html[decision_start:decision_end]
+          lp = decision.index('value="lp"')
+          belief = decision.index('value="belief"')
+          if lp > belief:
+              raise SystemExit('Exact LP must appear before Belief Search in the Coach strategy selector')
+          ai_start = html.index('id="ai-strategy"')
+          ai_end = html.index('</select>', ai_start)
+          ai = html[ai_start:ai_end]
+          if ai.index('value="lp"') > ai.index('value="belief"'):
+              raise SystemExit('Exact LP must appear before Belief Search in the AI strategy selector')
+          print('Exact LP ordering OK in Play strategy selectors.')
+          PY
           "$BROWSER" --headless --no-sandbox --disable-gpu --virtual-time-budget=12000 --dump-dom 'http://127.0.0.1:8765/#strategies' >/tmp/strategies.html 2>/tmp/strategies-browser.log
           grep -q 'How each strategy thinks.' /tmp/strategies.html
           "$BROWSER" --headless --no-sandbox --disable-gpu --virtual-time-budget=12000 --dump-dom 'http://127.0.0.1:8765/#nash' >/tmp/nash.html 2>/tmp/nash-browser.log
