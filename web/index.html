@@ -69,7 +69,7 @@
           </button>
           <button class="journey-card" data-start-mode="coach">
             <span class="journey-icon">+</span><h3>Play with a coach</h3>
-            <p>You still make every move. The coach scores your legal actions and can open deeper information-state and forecast views.</p><small>AI-assisted play →</small>
+            <p>You still make every move. The coach scores your legal actions and highlights the best move or tied best moves.</p><small>AI-assisted play →</small>
           </button>
         </div>
 
@@ -93,7 +93,7 @@
         <div id="play-mode-grid" class="play-mode-grid" role="group" aria-label="Play mode">
           <button class="play-mode-card" data-play-mode="local"><span>2P</span><div><strong>Local two-player</strong><small>Privacy handoff between turns</small></div></button>
           <button class="play-mode-card active" data-play-mode="ai"><span>AI</span><div><strong>Play vs AI</strong><small>Clean game view</small></div></button>
-          <button class="play-mode-card" data-play-mode="coach"><span>+</span><div><strong>AI + Coach</strong><small>Move scores and optional deep analysis</small></div></button>
+          <button class="play-mode-card" data-play-mode="coach"><span>+</span><div><strong>AI + Coach</strong><small>Move scores and recommendations</small></div></button>
         </div>
 
         <div id="ai-play-shell">
@@ -122,7 +122,7 @@
           </div>
 
           <div id="coach-shell" class="coach-shell" hidden>
-            <div class="coach-intro"><div><p class="kicker">AI COACH</p><h2>Decision support without taking the move away from you.</h2><p>Choose which strategy should advise you. The board below scores every legal action from your current information set.</p></div><button id="coach-advanced-toggle" class="secondary-btn">Show deeper analysis</button></div>
+            <div class="coach-intro"><div><p class="kicker">AI COACH</p><h2>Decision support without taking the move away from you.</h2><p>Choose which strategy should advise you. The board below scores every legal action from your current information set.</p></div></div>
             <section class="panel combined-map-panel">
               <div class="panel-heading decision-map-heading">
                 <div><p class="kicker">COACH RECOMMENDATION</p><h2>Compare your legal moves</h2></div>
@@ -132,18 +132,13 @@
               <div id="combined-value-map" class="combined-value-map" aria-label="Strategy-specific action scores"></div>
             </section>
 
-            <section class="panel play-analysis-panel coach-advanced" hidden>
-              <div class="panel-heading"><div><p class="kicker">INFORMATION-STATE VIEW</p><h2>Histories that still fit what you know</h2></div><span id="play-world-prob" class="pill">100% equal-weight each</span></div>
-              <p class="muted">Each board is compatible with your observations. Strategy-specific values are shown without exposing the true hidden board.</p>
-              <div id="play-info-states" class="info-state-grid"></div>
-            </section>
-
-            <section class="panel timeline-panel coach-advanced" hidden>
-              <div class="panel-heading"><div><p class="kicker">MATCH TIMELINE</p><h2>How the forecast changed as information arrived</h2></div><span id="timeline-strategy-label" class="pill">selected strategy forecast</span></div>
-              <p class="muted">Forecasts are Monte Carlo estimates under the selected strategies, not equilibrium certificates.</p>
-              <div id="confidence-timeline" class="confidence-timeline"></div>
-              <div id="truth-reveal" class="truth-reveal" hidden></div>
-            </section>
+            <div hidden aria-hidden="true">
+              <span id="play-world-prob"></span>
+              <div id="play-info-states"></div>
+              <span id="timeline-strategy-label"></span>
+              <div id="confidence-timeline"></div>
+              <div id="truth-reveal" hidden></div>
+            </div>
           </div>
         </div>
 
