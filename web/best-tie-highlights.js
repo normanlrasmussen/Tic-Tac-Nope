@@ -57,6 +57,10 @@
     return `${labels.slice(0, -1).join(', ')}, and ${labels[labels.length - 1]}`;
   }
 
+  function setTextIfChanged(element, text) {
+    if (element && element.textContent !== text) element.textContent = text;
+  }
+
   function normalizeCoachRecommendation() {
     const root = document.getElementById('combined-value-map');
     const strategyId = document.getElementById('decision-strategy')?.value;
@@ -76,9 +80,10 @@
       const summary = document.getElementById('combined-strategy-summary');
       const firstBestCell = cells.find((cell) => bestSet.has(moveFromCell(cell, '.combined-cell-number')));
       const scoreText = firstBestCell?.querySelector('strong')?.textContent?.trim() || '';
-      if (summary) {
-        summary.textContent = `${evaluation.name} currently has cells ${humanMoveList(bestMoves)} tied for best with ${evaluation.metricLabel.toLowerCase()} ${scoreText}. ${evaluation.detail}`;
-      }
+      setTextIfChanged(
+        summary,
+        `${evaluation.name} currently has cells ${humanMoveList(bestMoves)} tied for best with ${evaluation.metricLabel.toLowerCase()} ${scoreText}. ${evaluation.detail}`
+      );
     }
   }
 
@@ -108,7 +113,7 @@
         const summary = card.querySelector('.strategy-analysis-summary strong');
         const firstBestCell = cells.find((cell) => bestSet.has(moveFromCell(cell, '.score-cell-index')));
         const scoreText = firstBestCell?.querySelector('strong')?.textContent?.trim() || '';
-        if (summary) summary.textContent = `Best: cells ${humanMoveList(bestMoves)} · ${scoreText}`;
+        setTextIfChanged(summary, `Best: cells ${humanMoveList(bestMoves)} · ${scoreText}`);
       }
     }
   }
@@ -125,7 +130,7 @@
       const bestMoves = detail?.bestMoves || bestMovesForRows(detail?.scores);
       if (!bestMoves || bestMoves.length <= 1) return;
       const heading = card.querySelector('.world-strategy-head strong');
-      if (heading) heading.textContent = `world favors c${bestMoves.map((move) => move + 1).join(', c')}`;
+      setTextIfChanged(heading, `world favors c${bestMoves.map((move) => move + 1).join(', c')}`);
     });
   }
 
