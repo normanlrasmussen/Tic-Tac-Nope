@@ -48,7 +48,10 @@
                     loadScript('./ux-refresh.js', () => {
                       loadScript('./coach-all-strategies.js', () => {
                         if (window.TTNCoachAllStrategies?.install) window.TTNCoachAllStrategies.install();
-                        openHashPage();
+                        loadScript('./lp-first-ordering.js', () => {
+                          if (window.TTNLPFirstOrdering?.install) window.TTNLPFirstOrdering.install();
+                          openHashPage();
+                        });
                       });
                     });
                   });
