@@ -6,8 +6,8 @@
 
   const LP_ID = 'lp';
   const ALL_ID = 'all';
+  const SELECT_IDS = ['ai-strategy', 'decision-strategy'];
   let installed = false;
-  let defaultsApplied = false;
 
   function pinLpFirstInRegistry() {
     const index = T.STRATEGIES.findIndex((strategy) => strategy.id === LP_ID);
@@ -30,49 +30,79 @@
 
   function normalizeVisibleOrdering() {
     pinLpFirstInRegistry();
-    pinLpFirstInSelect(document.getElementById('ai-strategy'));
-    pinLpFirstInSelect(document.getElementById('decision-strategy'));
+    SELECT_IDS.forEach((id) => pinLpFirstInSelect(document.getElementById(id)));
   }
 
-  function selectExactLpByDefault(select) {
-    if (!select) return false;
-    const lp = select.querySelector(`option[value="${LP_ID}"]`);
-    if (!lp || lp.disabled) return false;
+  function userHasChosen(select) {
+    return select?.dataset.lpUserChosen === 'true';
+  }
+
+  function exactLpIsAvailable(select) {
+    const lp = select?.querySelector(`option[value="${LP_ID}"]`);
+    return Boolean(lp && !lp.disabled);
+  }
+
+  function enforceExactLpDefault(select) {
+    if (!select || userHasChosen(select) || !exactLpIsAvailable(select)) return false;
+
     if (select.value !== LP_ID) {
       select.value = LP_ID;
       select.dispatchEvent(new Event('change', { bubbles: true }));
     }
-    return true;
+    select.dataset.defaultExact = 'true';
+    select.dataset.currentStrategy = select.value;
+    return select.value === LP_ID;
   }
 
-  function applyInitialLpDefaults() {
-    if (defaultsApplied) return;
-    const aiReady = selectExactLpByDefault(document.getElementById('ai-strategy'));
-    const coachReady = selectExactLpByDefault(document.getElementById('decision-strategy'));
-    defaultsApplied = aiReady && coachReady;
-  }
-
-  function handleArtifactsLoaded() {
+  function normalizeAndEnforceDefaults() {
     normalizeVisibleOrdering();
-    applyInitialLpDefaults();
+    SELECT_IDS.forEach((id) => enforceExactLpDefault(document.getElementById(id)));
+  }
+
+  function markUserChoice(select) {
+    if (!select) return;
+    select.dataset.lpUserChosen = 'true';
   }
 
   function observeSelect(id) {
     const select = document.getElementById(id);
     if (!select || select.dataset.lpFirstObserver) return;
     select.dataset.lpFirstObserver = 'true';
-    new MutationObserver(() => normalizeVisibleOrdering()).observe(select, { childList: true });
+
+    // Pointer/keyboard interaction means subsequent strategy changes are intentional.
+    select.addEventListener('pointerdown', () => markUserChoice(select), { capture: true });
+    select.addEventListener('keydown', () => markUserChoice(select), { capture: true });
+
+    // If another initialization layer programmatically resets the strategy before
+    // the user has interacted, restore the intended Exact LP default.
+    select.addEventListener('change', () => {
+      select.dataset.currentStrategy = select.value;
+      if (!userHasChosen(select) && select.value !== LP_ID) {
+        queueMicrotask(() => enforceExactLpDefault(select));
+      }
+    });
+
+    new MutationObserver(() => normalizeAndEnforceDefaults()).observe(select, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['disabled']
+    });
   }
 
   function install() {
     if (installed) return;
     installed = true;
-    normalizeVisibleOrdering();
-    observeSelect('ai-strategy');
-    observeSelect('decision-strategy');
-    applyInitialLpDefaults();
-    global.addEventListener('ttn-lp-artifacts-loaded', handleArtifactsLoaded);
+
+    SELECT_IDS.forEach(observeSelect);
+    normalizeAndEnforceDefaults();
+    global.addEventListener('ttn-lp-artifacts-loaded', normalizeAndEnforceDefaults);
+
+    // Cover both sides of the asynchronous LP-artifact/script initialization race.
+    [0, 50, 250, 1000, 2500].forEach((delay) => {
+      global.setTimeout(normalizeAndEnforceDefaults, delay);
+    });
   }
 
-  global.TTNLPFirstOrdering = { install, normalizeVisibleOrdering };
+  global.TTNLPFirstOrdering = { install, normalizeVisibleOrdering, normalizeAndEnforceDefaults };
 })(window);
