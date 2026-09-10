@@ -223,6 +223,22 @@
     select.insertBefore(option, select.firstChild);
   }
 
+  function strategyArenaButton() {
+    return document.querySelector('#page-simulate .research-tabs [data-page="simulate"]');
+  }
+
+  function redirectToStrategyArena(event) {
+    event?.preventDefault();
+    event?.stopImmediatePropagation();
+    const target = strategyArenaButton();
+    if (target) {
+      target.click();
+      return;
+    }
+    document.querySelectorAll('.page').forEach((page) => page.classList.toggle('active', page.id === 'page-simulate'));
+    try { history.replaceState(null, '', '#simulate'); } catch (_) { /* no-op */ }
+  }
+
   function retirePositionLab() {
     document.getElementById('page-analysis')?.remove();
     document.querySelectorAll('.research-tabs [data-page="analysis"]').forEach((button) => button.remove());
@@ -234,18 +250,14 @@
     const labButton = document.querySelector('.topbar .nav-btn[data-page="analysis"]');
     if (labButton && !labButton.dataset.strategyArenaRedirect) {
       labButton.dataset.strategyArenaRedirect = 'true';
-      labButton.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        const target = document.querySelector('.research-tabs [data-page="simulate"]')
-          || document.querySelector('#page-simulate');
-        if (target?.click) target.click();
-        else {
-          document.querySelectorAll('.page').forEach((page) => page.classList.toggle('active', page.id === 'page-simulate'));
-          try { history.replaceState(null, '', '#simulate'); } catch (_) { /* no-op */ }
-        }
-      }, true);
+      labButton.addEventListener('click', redirectToStrategyArena, true);
     }
+
+    document.querySelectorAll('.research-tabs [data-page="simulate"]').forEach((button) => {
+      if (button.closest('#page-simulate') || button.dataset.directArenaRedirect) return;
+      button.dataset.directArenaRedirect = 'true';
+      button.addEventListener('click', redirectToStrategyArena, true);
+    });
 
     if ((global.location.hash || '').replace('#', '') === 'analysis') {
       try { history.replaceState(null, '', '#simulate'); } catch (_) { /* no-op */ }
