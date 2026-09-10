@@ -35,6 +35,7 @@ jobs:
           node --check web/app4-core.js
           node --check web/lp-strategy-extension.js
           node --check web/lp-first-ordering.js
+          node --check web/lp-research-page.js
           node --check web/best-tie-highlights.js
           node --check web/coach-all-strategies.js
           node --check web/nash-benchmark.js
@@ -42,6 +43,7 @@ jobs:
           grep -q 'id="page-home"' web/index.html
           grep -q 'id="local-board"' web/index.html
           grep -q 'id="simulation-config"' web/index.html
+          grep -q 'index.html#lp' web/strategy-lp.html
           test -f web/site-refresh.css
           test -f web/legacy-reset.css
           python - <<'PY'
@@ -105,7 +107,15 @@ jobs:
           "$BROWSER" --headless --no-sandbox --disable-gpu --virtual-time-budget=12000 --dump-dom 'http://127.0.0.1:8765/#nash' >/tmp/nash.html 2>/tmp/nash-browser.log
           grep -q 'The exact Nash equilibrium.' /tmp/nash.html
           grep -q 'class="nash-number"' /tmp/nash.html
+          grep -q 'data-page="lp"' /tmp/nash.html
           ! grep -q 'Position Lab' /tmp/nash.html
+          "$BROWSER" --headless --no-sandbox --disable-gpu --virtual-time-budget=15000 --dump-dom 'http://127.0.0.1:8765/#lp' >/tmp/lp.html 2>/tmp/lp-browser.log
+          grep -q 'How Tic-Tac-Nope gets an exact Nash equilibrium.' /tmp/lp.html
+          grep -q 'From hidden moves to a certified policy' /tmp/lp.html
+          grep -q 'OPTIMALITY CERTIFICATE' /tmp/lp.html
+          grep -q 'GLOBAL SOLVE → LOCAL MOVE' /tmp/lp.html
+          grep -q '4,715,500 game histories' /tmp/lp.html
+          grep -q 'LP Solver' /tmp/lp.html
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
