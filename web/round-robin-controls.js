@@ -48,6 +48,10 @@
     }
     return (o + 0.5 * draw) / (2 * rounds);
   }
+  function exactLPAvailable(hidden) {
+    if (typeof T.exactLPArtifactForRules !== 'function') return false;
+    return [O, X].every((opener) => Boolean(T.exactLPArtifactForRules(T.makeRules(hidden, opener))));
+  }
   function install() {
     const button = document.getElementById('run-round-robin');
     const actions = document.querySelector('.round-robin-actions');
@@ -64,22 +68,32 @@
       const input = document.getElementById('rr-rounds');
       const rounds = Math.max(1, Math.min(2500, Math.floor(Number(input.value) || 25)));
       input.value = rounds;
-      const ids = T.STRATEGIES.filter((s) => s.sim).map((s) => s.id);
+      const ids = T.STRATEGIES.filter((s) => s.sim || s.id === 'lp').map((s) => s.id);
       const names = ids.map((id) => T.STRATEGIES.find((s) => s.id === id).name);
       const scores = ids.map(() => ids.map(() => null));
-      const total = ids.length * (ids.length - 1);
       const hidden = hiddenMoves();
+      const lpAvailable = exactLPAvailable(hidden);
+      const runnable = (r, c) => r !== c && (lpAvailable || (ids[r] !== 'lp' && ids[c] !== 'lp'));
+      const total = ids.reduce((count, _, r) => count + ids.reduce((rowCount, __, c) => rowCount + (runnable(r, c) ? 1 : 0), 0), 0);
       let done = 0;
       button.disabled = input.disabled = true;
       try {
         for (let r = 0; r < ids.length; r++) for (let c = 0; c < ids.length; c++) {
-          if (r === c) continue;
+          if (!runnable(r, c)) continue;
           root.innerHTML = `<p class="muted">Running round robin… ${done}/${total} matchups complete · ${rounds} balanced rounds each.</p>`;
           scores[r][c] = await matchup(ids[r], ids[c], rounds, hidden, 0x5eed1234 ^ (r << 12) ^ (c << 4) ^ rounds);
           done++;
           await sleep();
         }
-        root.innerHTML = `<div class="rr-table" style="--rr-cols:${ids.length}"><div class="rr-row rr-head"><b>O \\ X</b>${names.map((n) => `<b>${n}</b>`).join('')}</div>${scores.map((row, r) => `<div class="rr-row"><b>${names[r]}</b>${row.map((v, c) => r === c ? '<span class="rr-self">—</span>' : `<span>${v.toFixed(2)}</span>`).join('')}</div>`).join('')}</div><p class="muted">Each off-diagonal cell uses <strong>${rounds} rounds = ${2 * rounds} games</strong>: one O-opening and one X-opening game per round. Score is 1 for an O win, 0.5 for a draw, and 0 for an O loss. Self-matchups are skipped.</p>`;
+        const cell = (v, r, c) => {
+          if (r === c) return '<span class="rr-self">—</span>';
+          if (v === null) return '<span class="rr-self" title="Exact LP artifact unavailable for this layout">N/A</span>';
+          return `<span>${v.toFixed(2)}</span>`;
+        };
+        const lpNote = lpAvailable
+          ? 'Exact Nash (Sequence-Form LP) is included using the published certified policy for both opening roles.'
+          : 'Exact Nash (Sequence-Form LP) remains in the lineup, but its cells are N/A because this layout does not have certified artifacts for both opening roles.';
+        root.innerHTML = `<div class="rr-table" style="--rr-cols:${ids.length}"><div class="rr-row rr-head"><b>O \\ X</b>${names.map((n) => `<b>${n}</b>`).join('')}</div>${scores.map((row, r) => `<div class="rr-row"><b>${names[r]}</b>${row.map((v, c) => cell(v, r, c)).join('')}</div>`).join('')}</div><p class="muted">Each simulated off-diagonal cell uses <strong>${rounds} rounds = ${2 * rounds} games</strong>: one O-opening and one X-opening game per round. Score is 1 for an O win, 0.5 for a draw, and 0 for an O loss. Self-matchups are skipped. ${lpNote}</p>`;
       } catch (error) {
         console.error(error);
         root.innerHTML = `<p class="muted">${error.message}</p>`;
