@@ -42,8 +42,11 @@
           loadScript('./strategy-data.js', () => {
             loadScript('./strategy-guide.js', () => {
               loadScript('./lp-strategy-extension.js', () => {
-                loadScript('./nash-benchmark.js', () => {
-                  loadScript('./ux-refresh.js', openHashPage);
+                loadScript('./best-tie-highlights.js', () => {
+                  if (window.TTNBestTieHighlights?.install) window.TTNBestTieHighlights.install();
+                  loadScript('./nash-benchmark.js', () => {
+                    loadScript('./ux-refresh.js', openHashPage);
+                  });
                 });
               });
             });
