@@ -45,7 +45,12 @@
                 loadScript('./best-tie-highlights.js', () => {
                   if (window.TTNBestTieHighlights?.install) window.TTNBestTieHighlights.install();
                   loadScript('./nash-benchmark.js', () => {
-                    loadScript('./ux-refresh.js', openHashPage);
+                    loadScript('./ux-refresh.js', () => {
+                      loadScript('./coach-all-strategies.js', () => {
+                        if (window.TTNCoachAllStrategies?.install) window.TTNCoachAllStrategies.install();
+                        openHashPage();
+                      });
+                    });
                   });
                 });
               });
