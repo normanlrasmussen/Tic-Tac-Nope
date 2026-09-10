@@ -88,12 +88,17 @@ jobs:
           belief = decision.index('value="belief"')
           if lp > belief:
               raise SystemExit('Exact LP must appear before Belief Search in the Coach strategy selector')
+          if 'data-current-strategy="lp"' not in decision or 'data-default-exact="true"' not in decision:
+              raise SystemExit('AI + Coach must actually select Exact LP by default')
+
           ai_start = html.index('id="ai-strategy"')
           ai_end = html.index('</select>', ai_start)
           ai = html[ai_start:ai_end]
           if ai.index('value="lp"') > ai.index('value="belief"'):
               raise SystemExit('Exact LP must appear before Belief Search in the AI strategy selector')
-          print('Exact LP ordering OK in Play strategy selectors.')
+          if 'data-current-strategy="lp"' not in ai or 'data-default-exact="true"' not in ai:
+              raise SystemExit('Play vs AI must actually select Exact LP by default')
+          print('Exact LP is first and selected by default in both Play strategy selectors.')
           PY
           "$BROWSER" --headless --no-sandbox --disable-gpu --virtual-time-budget=12000 --dump-dom 'http://127.0.0.1:8765/#strategies' >/tmp/strategies.html 2>/tmp/strategies-browser.log
           grep -q 'How each strategy thinks.' /tmp/strategies.html
