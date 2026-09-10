@@ -36,6 +36,7 @@ jobs:
           node --check web/lp-strategy-extension.js
           node --check web/lp-first-ordering.js
           node --check web/lp-research-page.js
+          node --check web/nash-atlas.js
           node --check web/best-tie-highlights.js
           node --check web/coach-all-strategies.js
           node --check web/nash-benchmark.js
@@ -107,14 +108,25 @@ jobs:
           "$BROWSER" --headless --no-sandbox --disable-gpu --virtual-time-budget=12000 --dump-dom 'http://127.0.0.1:8765/#nash' >/tmp/nash.html 2>/tmp/nash-browser.log
           grep -q 'The exact Nash equilibrium.' /tmp/nash.html
           grep -q 'class="nash-number"' /tmp/nash.html
+          grep -q 'data-page="nash-data"' /tmp/nash.html
           grep -q 'data-page="lp"' /tmp/nash.html
           ! grep -q 'Position Lab' /tmp/nash.html
+          "$BROWSER" --headless --no-sandbox --disable-gpu --virtual-time-budget=15000 --dump-dom 'http://127.0.0.1:8765/#nash-data' >/tmp/nash-data.html 2>/tmp/nash-data-browser.log
+          grep -q 'The Nash Atlas.' /tmp/nash-data.html
+          grep -q 'Starts 1st' /tmp/nash-data.html
+          grep -q 'Starts 2nd' /tmp/nash-data.html
+          grep -q 'Canonical solved layouts' /tmp/nash-data.html
+          grep -q 'data-atlas-canonical-mask="10"' /tmp/nash-data.html
+          grep -q 'Fog cells 2, 4' /tmp/nash-data.html
+          grep -q '+0.5000' /tmp/nash-data.html
+          grep -q 'Nash guarantee.' /tmp/nash-data.html
           "$BROWSER" --headless --no-sandbox --disable-gpu --virtual-time-budget=15000 --dump-dom 'http://127.0.0.1:8765/#lp' >/tmp/lp.html 2>/tmp/lp-browser.log
           grep -q 'How Tic-Tac-Nope gets an exact Nash equilibrium.' /tmp/lp.html
           grep -q 'From hidden moves to a certified policy' /tmp/lp.html
           grep -q 'OPTIMALITY CERTIFICATE' /tmp/lp.html
           grep -q 'GLOBAL SOLVE → LOCAL MOVE' /tmp/lp.html
           grep -q '4,715,500 game histories' /tmp/lp.html
+          grep -q 'Nash Atlas' /tmp/lp.html
           grep -q 'LP Solver' /tmp/lp.html
 
       - name: Configure Pages
