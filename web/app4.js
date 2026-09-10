@@ -17,6 +17,13 @@
     document.head.appendChild(script);
   }
 
+  function rewriteLpTheoryLinks() {
+    document.querySelectorAll('a[href="./strategy-lp.html"]').forEach((link) => {
+      link.href = '#lp';
+      if (/theory|guarantees/i.test(link.textContent || '')) link.textContent = 'How the exact solver works';
+    });
+  }
+
   function openHashPage() {
     const page = (window.location.hash || '').replace('#', '');
     if (!['home', 'play', 'analysis', 'strategies', 'nash', 'lp', 'simulate', 'rules'].includes(page)) return;
@@ -51,13 +58,16 @@
                   loadScript('./nash-benchmark.js', () => {
                     loadScript('./lp-research-page.js', () => {
                       if (window.TTNLPResearch?.install) window.TTNLPResearch.install();
+                      rewriteLpTheoryLinks();
                       loadScript('./ux-refresh.js', () => {
                         if (window.TTNLPResearch?.syncTabs) window.TTNLPResearch.syncTabs();
                         loadScript('./coach-all-strategies.js', () => {
                           if (window.TTNCoachAllStrategies?.install) window.TTNCoachAllStrategies.install();
                           if (window.TTNLPResearch?.syncTabs) window.TTNLPResearch.syncTabs();
+                          rewriteLpTheoryLinks();
                           loadScript('./lp-first-ordering.js', () => {
                             if (window.TTNLPFirstOrdering?.install) window.TTNLPFirstOrdering.install();
+                            rewriteLpTheoryLinks();
                             openHashPage();
                           });
                         });
