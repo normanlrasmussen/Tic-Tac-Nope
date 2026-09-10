@@ -264,10 +264,17 @@
 
     T.evaluateStrategy = function evaluateCoachAll(id, context, options = {}) {
       if (id !== ALL_ID) return originalEvaluate.call(T, id, context, options);
-      allContext = context;
-      allOptions = options || {};
-      contextVersion += 1;
-      cachedVersion = -1;
+
+      // The retired timeline still performs hidden 24-rollout forecast calls.
+      // Never let those simulated states replace the live Coach context.
+      const forecastOnly = Number(options?.rolloutBudget) === 24;
+      if (!forecastOnly) {
+        allContext = context;
+        allOptions = options || {};
+        contextVersion += 1;
+        cachedVersion = -1;
+      }
+
       return {
         id: ALL_ID,
         name: 'All Strategies',
