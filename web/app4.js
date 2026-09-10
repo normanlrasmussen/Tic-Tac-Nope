@@ -24,11 +24,20 @@
     });
   }
 
+  function syncResearchTabs() {
+    if (window.TTNLPResearch?.syncTabs) window.TTNLPResearch.syncTabs();
+    if (window.TTNNashAtlas?.syncTabs) window.TTNNashAtlas.syncTabs();
+  }
+
   function openHashPage() {
     const page = (window.location.hash || '').replace('#', '');
-    if (!['home', 'play', 'analysis', 'strategies', 'nash', 'lp', 'simulate', 'rules'].includes(page)) return;
+    if (!['home', 'play', 'analysis', 'strategies', 'nash', 'nash-data', 'lp', 'simulate', 'rules'].includes(page)) return;
     if (page === 'nash' && window.TTNNashBenchmark?.openPage) {
       window.TTNNashBenchmark.openPage();
+      return;
+    }
+    if (page === 'nash-data' && window.TTNNashAtlas?.openPage) {
+      window.TTNNashAtlas.openPage();
       return;
     }
     if (page === 'lp' && window.TTNLPResearch?.openPage) {
@@ -59,16 +68,21 @@
                     loadScript('./lp-research-page.js', () => {
                       if (window.TTNLPResearch?.install) window.TTNLPResearch.install();
                       rewriteLpTheoryLinks();
-                      loadScript('./ux-refresh.js', () => {
-                        if (window.TTNLPResearch?.syncTabs) window.TTNLPResearch.syncTabs();
-                        loadScript('./coach-all-strategies.js', () => {
-                          if (window.TTNCoachAllStrategies?.install) window.TTNCoachAllStrategies.install();
-                          if (window.TTNLPResearch?.syncTabs) window.TTNLPResearch.syncTabs();
-                          rewriteLpTheoryLinks();
-                          loadScript('./lp-first-ordering.js', () => {
-                            if (window.TTNLPFirstOrdering?.install) window.TTNLPFirstOrdering.install();
+                      loadScript('./nash-atlas.js', () => {
+                        if (window.TTNNashAtlas?.install) window.TTNNashAtlas.install();
+                        syncResearchTabs();
+                        loadScript('./ux-refresh.js', () => {
+                          syncResearchTabs();
+                          loadScript('./coach-all-strategies.js', () => {
+                            if (window.TTNCoachAllStrategies?.install) window.TTNCoachAllStrategies.install();
+                            syncResearchTabs();
                             rewriteLpTheoryLinks();
-                            openHashPage();
+                            loadScript('./lp-first-ordering.js', () => {
+                              if (window.TTNLPFirstOrdering?.install) window.TTNLPFirstOrdering.install();
+                              syncResearchTabs();
+                              rewriteLpTheoryLinks();
+                              openHashPage();
+                            });
                           });
                         });
                       });
