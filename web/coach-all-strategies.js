@@ -5,6 +5,7 @@
   if (!T) return;
 
   const ALL_ID = 'all';
+  const LP_STRATEGY_ID = 'lp';
   const SCORE_EPSILON = 1e-9;
   let installed = false;
   let allContext = null;
@@ -87,6 +88,14 @@
     ].join('|');
   }
 
+  function orderedStrategies() {
+    return [...T.STRATEGIES].sort((left, right) => {
+      if (left.id === LP_STRATEGY_ID && right.id !== LP_STRATEGY_ID) return -1;
+      if (right.id === LP_STRATEGY_ID && left.id !== LP_STRATEGY_ID) return 1;
+      return 0;
+    });
+  }
+
   function evaluateEveryStrategy(originalEvaluate) {
     if (!allContext) return [];
 
@@ -95,7 +104,7 @@
       T.ensureRegretPolicy(allContext.solver, trainingTarget);
     }
 
-    return T.STRATEGIES.map((strategy) => {
+    return orderedStrategies().map((strategy) => {
       try {
         const key = evaluationSeedKey(strategy.id, allContext, allOptions);
         const context = { ...allContext, rng: seededRandom(`evaluation|${key}`) };
