@@ -35,6 +35,7 @@ jobs:
           node --check web/app4-core.js
           node --check web/lp-strategy-extension.js
           node --check web/best-tie-highlights.js
+          node --check web/coach-all-strategies.js
           node --check web/nash-benchmark.js
           node --check web/ux-refresh.js
           grep -q 'id="page-home"' web/index.html
@@ -73,11 +74,15 @@ jobs:
           "$BROWSER" --headless --no-sandbox --disable-gpu --virtual-time-budget=10000 --dump-dom 'http://127.0.0.1:8765/#home' >/tmp/home.html 2>/tmp/home-browser.log
           grep -q 'Tic-tac-toe' /tmp/home.html
           grep -q 'Play together' /tmp/home.html
+          "$BROWSER" --headless --no-sandbox --disable-gpu --virtual-time-budget=12000 --dump-dom 'http://127.0.0.1:8765/#play' >/tmp/play.html 2>/tmp/play-browser.log
+          grep -q 'All · compare every strategy' /tmp/play.html
+          ! grep -q 'Position Lab' /tmp/play.html
           "$BROWSER" --headless --no-sandbox --disable-gpu --virtual-time-budget=12000 --dump-dom 'http://127.0.0.1:8765/#strategies' >/tmp/strategies.html 2>/tmp/strategies-browser.log
           grep -q 'How each strategy thinks.' /tmp/strategies.html
           "$BROWSER" --headless --no-sandbox --disable-gpu --virtual-time-budget=12000 --dump-dom 'http://127.0.0.1:8765/#nash' >/tmp/nash.html 2>/tmp/nash-browser.log
           grep -q 'The exact Nash equilibrium.' /tmp/nash.html
           grep -q 'class="nash-number"' /tmp/nash.html
+          ! grep -q 'Position Lab' /tmp/nash.html
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
