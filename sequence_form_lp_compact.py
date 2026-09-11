@@ -44,8 +44,7 @@ def compact_behavioral_policy(catalog: SequenceCatalog, realization: np.ndarray,
     return compact_policy_and_realization(catalog, realization)[0]
 
 
-def compact_policy_and_realization(catalog: SequenceCatalog, realization: np.ndarray, *,
-                                   _all_infos: bool = False) -> Tuple[Dict[str, Dict[str, float]], np.ndarray]:
+def compact_policy_and_realization(catalog: SequenceCatalog, realization: np.ndarray) -> Tuple[Dict[str, Dict[str, float]], np.ndarray]:
     realization = np.asarray(realization, dtype=float)
     if realization.shape != (catalog.n_sequences,):
         raise ValueError("Realization vector has the wrong shape")
@@ -60,19 +59,18 @@ def compact_policy_and_realization(catalog: SequenceCatalog, realization: np.nda
     reconstructed = np.zeros(catalog.n_sequences, dtype=float)
     reconstructed[0] = 1.0
     supported_infos = getattr(catalog, "iter_supported_infos", None)
-    infos = (supported_infos(realization) if supported_infos is not None and not _all_infos
-             else catalog.infos.items())
+    infos = supported_infos(realization) if supported_infos is not None else catalog.infos.items()
     for key, info in infos:
         parent = float(reconstructed[info.parent_sequence])
         if parent == 0.0:
             continue
         weights = [max(0.0, float(realization[child])) for child in info.child_sequences]
         total = sum(weights)
-        if total == 0.0:
-            if supported_infos is not None and not _all_infos:
-                return compact_policy_and_realization(catalog, realization, _all_infos=True)
-            weights = [1.0] * len(info.actions)
-            total = float(len(weights))
+        if not total > 0.0:
+            raise RuntimeError(
+                "Exact policy export encountered a positive-reach information set "
+                f"with zero outgoing realization mass: {key}"
+            )
         probabilities = {}
         for action, child, weight in zip(info.actions, info.child_sequences, weights):
             if weight == 0.0:
@@ -83,6 +81,8 @@ def compact_policy_and_realization(catalog: SequenceCatalog, realization: np.nda
                 raise FloatingPointError("Positive behavioral support underflowed during export")
             probabilities[str(action)] = probability
             reconstructed[child] = child_weight
+        if not probabilities:
+            raise RuntimeError(f"Exact policy export produced empty support at {key}")
         policy[key] = probabilities
     return policy, reconstructed
 
@@ -158,6 +158,7 @@ def main() -> None:
             "Mystery-cell attempts reveal the actor's attempted location but not success/failure.",
             "Policy entries with zero parent realization are omitted because their behavioral completion does not affect the realization plan.",
             "Every positive behavioral probability is retained; only exactly zero own-reach information sets are omitted.",
+            "A positive-reach information set with zero outgoing realization mass is an export error; it is never completed with a fallback policy.",
             "Native enumeration aggregates terminal sequence-pair utilities without changing the game.",
             "When highspy is available, LP columns are streamed in bounded chunks to reduce peak memory.",
             "The certificate checks the realization plans reconstructed from the exported behavioral strategies.",

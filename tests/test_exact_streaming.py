@@ -8,6 +8,7 @@ import pytest
 from scipy.sparse import csr_matrix
 
 import sequence_form_lp as lp
+from sequence_form_lp_compact import compact_policy_and_realization
 
 
 def _late_game(hidden=3):
@@ -18,6 +19,15 @@ def _late_game(hidden=3):
         tried_x=0b001010010 & hidden,
         turn=lp.O,
     )
+
+
+def test_compact_export_rejects_positive_reach_with_zero_outgoing_mass():
+    catalog = lp.SequenceCatalog(lp.O)
+    catalog.register("2|2|3|", 0, (0, 1))
+    realization = np.zeros(catalog.n_sequences)
+    realization[0] = 1.0
+    with pytest.raises(RuntimeError, match="positive-reach information set"):
+        compact_policy_and_realization(catalog, realization)
 
 
 @pytest.mark.skipif(not (shutil.which("g++") or shutil.which("clang++")), reason="native compiler unavailable")

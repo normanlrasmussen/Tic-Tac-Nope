@@ -24,8 +24,6 @@ def test_extract_lp_backend_equals_form():
 
 
 def test_compact_exact_command_matches_native_scipy_standalone_path():
-    # mask 15 is hidden cells 1,2,3,4, the same production-scale case used
-    # for the standalone native+SciPy benchmark.
     with tempfile.TemporaryDirectory() as directory:
         directory = Path(directory)
         with (
@@ -33,14 +31,14 @@ def test_compact_exact_command_matches_native_scipy_standalone_path():
             patch.object(precompute.batch, "run_command") as run,
             patch.object(precompute, "_lp_backend", "scipy"),
         ):
-            precompute.solve_exact_compact(15, "O", 0, True)
+            precompute.solve_exact_compact(3, "O", 0, True)
 
         command = run.call_args.args[0]
         hidden_index = command.index("--hidden")
         start_index = command.index("--start")
         enumerator_index = command.index("--enumerator")
         backend_index = command.index("--lp-backend")
-        assert command[hidden_index + 1] == "1,2,3,4"
+        assert command[hidden_index + 1] == "1,2"
         assert command[start_index + 1] == "O"
         assert command[enumerator_index + 1] == "native"
         assert command[backend_index + 1] == "scipy"
@@ -58,21 +56,21 @@ def _minimal_artifact(solver: str) -> dict:
 def test_forced_scipy_recomputes_existing_highspy_artifact():
     with tempfile.TemporaryDirectory() as directory:
         directory = Path(directory)
-        out = directory / "mask-15-O.json"
+        out = directory / "mask-3-O.json"
         out.write_text(json.dumps(_minimal_artifact("highspy-streaming")), encoding="utf-8")
         with (
             patch.object(precompute.batch, "EXACT_DIR", directory),
             patch.object(precompute.batch, "run_command") as run,
             patch.object(precompute, "_lp_backend", "scipy"),
         ):
-            precompute.solve_exact_compact(15, "O", 0, False)
+            precompute.solve_exact_compact(3, "O", 0, False)
         run.assert_called_once()
 
 
-def test_forced_scipy_reuses_existing_scipy_artifact():
+def test_forced_scipy_reuses_only_same_start_scipy_artifact():
     with tempfile.TemporaryDirectory() as directory:
         directory = Path(directory)
-        out = directory / "mask-15-O.json"
+        out = directory / "mask-3-O.json"
         out.write_text(
             json.dumps(_minimal_artifact("scipy.optimize.linprog(method='highs')")),
             encoding="utf-8",
@@ -82,5 +80,25 @@ def test_forced_scipy_reuses_existing_scipy_artifact():
             patch.object(precompute.batch, "run_command") as run,
             patch.object(precompute, "_lp_backend", "scipy"),
         ):
-            precompute.solve_exact_compact(15, "O", 0, False)
+            precompute.solve_exact_compact(3, "O", 0, False)
         run.assert_not_called()
+
+
+def test_opposite_start_artifact_is_never_reused():
+    with tempfile.TemporaryDirectory() as directory:
+        directory = Path(directory)
+        counterpart = directory / "mask-3-O.json"
+        counterpart.write_text(
+            json.dumps(_minimal_artifact("scipy-highs-augmented")),
+            encoding="utf-8",
+        )
+        with (
+            patch.object(precompute.batch, "EXACT_DIR", directory),
+            patch.object(precompute.batch, "run_command") as run,
+            patch.object(precompute, "_lp_backend", "scipy"),
+        ):
+            precompute.solve_exact_compact(3, "X", 0, False)
+        run.assert_called_once()
+        command = run.call_args.args[0]
+        assert command[command.index("--start") + 1] == "X"
+        assert command[command.index("--lp-backend") + 1] == "scipy"
