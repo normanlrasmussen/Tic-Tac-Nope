@@ -11,6 +11,7 @@ Run from the repository root:
 """
 from __future__ import annotations
 
+import gc
 import json
 import math
 import sys
@@ -87,6 +88,10 @@ def main() -> None:
             f"build={build_seconds:.2f}s, solve+certificate={solve_seconds:.2f}s",
             flush=True,
         )
+
+        # Avoid retaining one million-sequence game while constructing the next.
+        del game, result, reference, counts, expected_counts
+        gc.collect()
 
     print("=" * 72, flush=True)
     print(f"PASS all {len(CASES)} SciPy smoke cases in {time.perf_counter() - total_started:.2f}s", flush=True)
