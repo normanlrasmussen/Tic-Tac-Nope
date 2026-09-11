@@ -1,4 +1,5 @@
 """Fast CLI/command wiring checks for the exact LP backend selector."""
+import json
 from pathlib import Path
 import tempfile
 from unittest.mock import patch
@@ -43,3 +44,43 @@ def test_compact_exact_command_matches_native_scipy_standalone_path():
         assert command[start_index + 1] == "O"
         assert command[enumerator_index + 1] == "native"
         assert command[backend_index + 1] == "scipy"
+
+
+def _minimal_artifact(solver: str) -> dict:
+    return {
+        "schema": 2,
+        "numericallySolved": True,
+        "informationModel": precompute.INFORMATION_MODEL,
+        "solver": solver,
+    }
+
+
+def test_forced_scipy_recomputes_existing_highspy_artifact():
+    with tempfile.TemporaryDirectory() as directory:
+        directory = Path(directory)
+        out = directory / "mask-15-O.json"
+        out.write_text(json.dumps(_minimal_artifact("highspy-streaming")), encoding="utf-8")
+        with (
+            patch.object(precompute.batch, "EXACT_DIR", directory),
+            patch.object(precompute.batch, "run_command") as run,
+            patch.object(precompute, "_lp_backend", "scipy"),
+        ):
+            precompute.solve_exact_compact(15, "O", 0, False)
+        run.assert_called_once()
+
+
+def test_forced_scipy_reuses_existing_scipy_artifact():
+    with tempfile.TemporaryDirectory() as directory:
+        directory = Path(directory)
+        out = directory / "mask-15-O.json"
+        out.write_text(
+            json.dumps(_minimal_artifact("scipy.optimize.linprog(method='highs')")),
+            encoding="utf-8",
+        )
+        with (
+            patch.object(precompute.batch, "EXACT_DIR", directory),
+            patch.object(precompute.batch, "run_command") as run,
+            patch.object(precompute, "_lp_backend", "scipy"),
+        ):
+            precompute.solve_exact_compact(15, "O", 0, False)
+        run.assert_not_called()
