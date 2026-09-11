@@ -1,0 +1,63 @@
+"""Regression coverage for native payoff aggregation and streamed exact LPs."""
+import importlib.util
+import shutil
+from unittest.mock import patch
+
+import numpy as np
+import pytest
+
+import sequence_form_lp as lp
+
+
+def _late_game(hidden=3):
+    return lp.State(
+        o_mask=0b010001001,
+        x_mask=0b001010010,
+        tried_o=0b010001001 & hidden,
+        tried_x=0b001010010 & hidden,
+        turn=lp.O,
+    )
+
+
+@pytest.mark.skipif(not (shutil.which("g++") or shutil.which("clang++")), reason="native compiler unavailable")
+def test_native_aggregated_payoff_matches_python_reference():
+    from sequence_form_native import build_native
+
+    rules = lp.Rules(3, lp.O)
+    root = _late_game(3)
+    native = build_native(rules, root)
+    with patch.object(lp, "make_root", return_value=root):
+        reference = lp.build_sequence_game_python(rules)
+
+    assert (native.histories, native.terminals) == (reference.histories, reference.terminals)
+    assert native.o.n_sequences == reference.o.n_sequences
+    assert native.x.n_sequences == reference.x.n_sequences
+    assert len(native.o.infos) == len(reference.o.infos)
+    assert len(native.x.infos) == len(reference.x.infos)
+    assert native.payoff.has_sorted_indices
+    assert (native.payoff != reference.payoff).nnz == 0
+
+
+@pytest.mark.skipif(not (shutil.which("g++") or shutil.which("clang++")), reason="native compiler unavailable")
+def test_scipy_exact_solver_still_certifies_native_game():
+    from sequence_form_native import build_native
+
+    rules = lp.Rules(3, lp.O)
+    game = build_native(rules, _late_game(3))
+    _, _, lower, upper, result = lp.solve_equilibrium(game, backend="scipy")
+    assert abs(upper - lower) <= lp.FEASIBILITY_TOLERANCE
+    assert result.certificate["exploitabilityGap"] <= lp.FEASIBILITY_TOLERANCE
+
+
+@pytest.mark.skipif(importlib.util.find_spec("highspy") is None, reason="highspy unavailable")
+def test_streaming_highspy_matches_scipy_on_small_exact_game():
+    rules = lp.Rules(3, lp.O)
+    root = _late_game(3)
+    with patch.object(lp, "make_root", return_value=root):
+        game = lp.build_sequence_game_python(rules)
+    xo_s, xx_s, lo_s, hi_s, _ = lp.solve_equilibrium(game, backend="scipy")
+    xo_h, xx_h, lo_h, hi_h, result = lp.solve_equilibrium(game, backend="highspy")
+    np.testing.assert_allclose([lo_h, hi_h], [lo_s, hi_s], atol=lp.FEASIBILITY_TOLERANCE)
+    assert result.certificate["exploitabilityGap"] <= lp.FEASIBILITY_TOLERANCE
+    assert xo_h.shape == xo_s.shape
+    assert xx_h.shape == xx_s.shape
