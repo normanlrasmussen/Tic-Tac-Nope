@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
+from scipy.sparse import csr_matrix
 
 import sequence_form_lp as lp
 
@@ -61,3 +62,19 @@ def test_streaming_highspy_matches_scipy_on_small_exact_game():
     assert result.certificate["exploitabilityGap"] <= lp.FEASIBILITY_TOLERANCE
     assert xo_h.shape == xo_s.shape
     assert xx_h.shape == xx_s.shape
+
+
+@pytest.mark.skipif(importlib.util.find_spec("highspy") is None, reason="highspy unavailable")
+def test_highspy_streaming_canonicalizes_duplicate_payoff_indices():
+    # CSR matrices with duplicates are valid SciPy inputs and can arise when
+    # native payoff chunks are concatenated.  HiGHS requires unique row
+    # indices within every streamed column.
+    E = csr_matrix([[1.0, 1.0]])
+    F = csr_matrix([[1.0]])
+    payoff = csr_matrix((np.array([0.25, 0.75]), np.array([0, 0]), np.array([0, 2, 2])),
+                        shape=(2, 1))
+
+    result = lp._solve_highspy_streaming(E, np.array([1.0]), F, np.array([1.0]),
+                                         payoff, n_x=2, n_p=1)
+    assert result.success
+    np.testing.assert_allclose(result.x[:2].sum(), 1.0, atol=lp.FEASIBILITY_TOLERANCE)

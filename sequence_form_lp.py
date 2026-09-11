@@ -397,6 +397,14 @@ def _solve_highspy_streaming(E, e, F, f, payoff_self, n_x, n_p) -> OptimizeResul
     for lo in range(0, n_x, chunk_cols):
         hi = min(n_x, lo + chunk_cols)
         block = vstack([E_csc[:, lo:hi], -payoff_self[lo:hi, :].T], format="csc")
+        # Native payoff aggregation can leave equal sequence-pair entries in
+        # different flushes.  SciPy permits duplicate sparse indices, but the
+        # HiGHS column API rejects them.  Canonicalize each bounded block here
+        # so streaming remains memory-bounded and the streamed model has the
+        # same summed payoff as sparse matrix multiplication.
+        if not block.has_canonical_format:
+            block.sum_duplicates()
+            block.eliminate_zeros()
         m = hi - lo
         status = highs.addCols(m, np.zeros(m), np.zeros(m), np.full(m, inf),
                                block.nnz, block.indptr[:-1], block.indices, block.data)
