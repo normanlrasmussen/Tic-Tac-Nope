@@ -337,6 +337,8 @@ def _certify_realization_pair(E, e, F, f, payoff_self, realization, opponent_rea
         "exploitabilityGap": best_upper - best_lower,
         "bestResponseBoundsResidual": max(abs(best_lower - lower), abs(best_upper - upper)),
     }
+    if not all(np.isfinite(value) for value in certificate.values()):
+        raise RuntimeError("Non-finite sequence-form certificate.")
     failures = {name: value for name, value in certificate.items()
                 if name not in ("tolerance", "payoff", "bestResponseLowerBound", "bestResponseUpperBound")
                 and abs(value) > tolerance}
