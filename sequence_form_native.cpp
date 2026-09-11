@@ -151,26 +151,34 @@ struct Game {
 
     template <class Entry, class Less>
     static void merge_sorted_unique(std::vector<Entry>& values, std::size_t old_size, Less less) {
-        std::size_t i = old_size;
-        std::size_t j = values.size();
-        std::size_t k = values.size();
-        while (i > 0 && j > old_size) {
-            const Entry& left = values[i - 1];
-            const Entry& right = values[j - 1];
-            if (less(left, right)) values[--k] = values[--j];
-            else if (less(right, left)) values[--k] = values[--i];
-            else {
-                Entry merged = left;
-                merged.value += right.value;
-                --i; --j;
-                if (merged.value != 0) values[--k] = merged;
+        if (old_size > values.size()) throw std::logic_error("Invalid payoff merge boundary");
+
+        // The prefix [0, old_size) and suffix [old_size, end) are independently
+        // sorted.  Do not hand-roll a backwards merge inside the same vector:
+        // writing into the suffix can overwrite an unread suffix entry.  The
+        // standard-library merge handles overlapping storage safely.
+        std::inplace_merge(
+            values.begin(),
+            values.begin() + static_cast<std::ptrdiff_t>(old_size),
+            values.end(),
+            less
+        );
+
+        // Coalesce equal sequence-pair keys and discard exact cancellation.
+        std::size_t write = 0;
+        for (std::size_t read = 0; read < values.size();) {
+            Entry merged = values[read++];
+            while (
+                read < values.size()
+                && !less(merged, values[read])
+                && !less(values[read], merged)
+            ) {
+                merged.value += values[read].value;
+                ++read;
             }
+            if (merged.value != 0) values[write++] = merged;
         }
-        while (i > 0) values[--k] = values[--i];
-        while (j > old_size) values[--k] = values[--j];
-        const std::size_t count = values.size() - k;
-        if (k) std::move(values.begin() + static_cast<std::ptrdiff_t>(k), values.end(), values.begin());
-        values.resize(count);
+        values.resize(write);
     }
 
     static std::uint64_t pack32(std::uint64_t row, std::uint64_t col) {
@@ -313,6 +321,28 @@ struct Game {
     }
 };
 
+bool payoff_merge_self_check() {
+    static const bool valid = []() {
+        // Regression for the original overlap bug: the old key (16) must not
+        // overwrite the unread new key (1) while the two sorted runs are merged.
+        std::vector<Payoff32> overwrite = {{16, 2}, {1, 3}};
+        Game::merge_sorted_unique(overwrite, 1, Game::less32);
+        if (
+            overwrite.size() != 2
+            || overwrite[0].key != 1 || overwrite[0].value != 3
+            || overwrite[1].key != 16 || overwrite[1].value != 2
+        ) return false;
+
+        // Also verify interleaving, duplicate coalescing, and exact cancellation.
+        std::vector<Payoff32> cancellation = {{1, 2}, {4, 1}, {1, -2}, {3, 5}};
+        Game::merge_sorted_unique(cancellation, 2, Game::less32);
+        return cancellation.size() == 2
+            && cancellation[0].key == 3 && cancellation[0].value == 5
+            && cancellation[1].key == 4 && cancellation[1].value == 1;
+    }();
+    return valid;
+}
+
 const void* catalog_data(const Catalog& catalog, int field) {
     switch (field) {
         case 0: return catalog.obs_low.data();
@@ -405,6 +435,7 @@ void* ttn_build(std::uint16_t hidden, int start, std::uint16_t o_mask, std::uint
                 std::uint64_t node_limit, void* control) noexcept {
     last_error[0]='\0';
     try {
+        if (!payoff_merge_self_check()) throw std::runtime_error("Native payoff merge self-check failed");
         if (((hidden|o_mask|x_mask|tried_o|tried_x)&~FULL_MASK)!=0) throw std::invalid_argument("Board and tried masks must fit the nine-cell board");
         if ((start!=O&&start!=X)||(turn!=O&&turn!=X)) throw std::invalid_argument("Starting player and turn must be O (2) or X (1)");
         const u128 obs_o=(static_cast<u128>(obs_o_hi)<<64)|obs_o_lo;
