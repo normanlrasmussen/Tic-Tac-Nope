@@ -77,11 +77,14 @@
                             if (window.TTNCoachAllStrategies?.install) window.TTNCoachAllStrategies.install();
                             syncResearchTabs();
                             rewriteLpTheoryLinks();
-                            loadScript('./lp-first-ordering.js', () => {
-                              if (window.TTNLPFirstOrdering?.install) window.TTNLPFirstOrdering.install();
-                              syncResearchTabs();
-                              rewriteLpTheoryLinks();
-                              openHashPage();
+                            loadScript('./playground-mode.js', () => {
+                              if (window.TTNPlaygroundMode?.install) window.TTNPlaygroundMode.install();
+                              loadScript('./lp-first-ordering.js', () => {
+                                if (window.TTNLPFirstOrdering?.install) window.TTNLPFirstOrdering.install();
+                                syncResearchTabs();
+                                rewriteLpTheoryLinks();
+                                openHashPage();
+                              });
                             });
                           });
                         });
