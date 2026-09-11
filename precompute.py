@@ -183,6 +183,11 @@ def solve_exact_compact(mask: int, start: str, node_limit: int, force: bool) -> 
         str(batch.ROOT / "sequence_form_lp_compact.py"),
         "--hidden", cells,
         "--start", start,
+        # Batch exact solves intentionally force the same native enumerator used
+        # for production-scale standalone solves. If native compilation is not
+        # available, failing loudly is safer than silently entering the much
+        # slower Python enumerator during a long all-configurations batch.
+        "--enumerator", "native",
         "--lp-backend", _lp_backend,
         "--output", str(out),
     ]
