@@ -1,9 +1,8 @@
 """Lossless native enumeration and compact sequence catalogs.
 
 The C++ traversal enumerates every history in the same order as the Python
-reference. Only storage changes: observations use base-32 integers instead of
-strings, and information sets use arrays instead of Python objects. Strings are
-decoded lazily when exporting behavioral policies.
+reference. Terminal utilities are aggregated by sequence pair in bounded native
+chunks, then copied directly into the final SciPy CSR payoff matrix.
 """
 from __future__ import annotations
 
@@ -11,15 +10,16 @@ import ctypes
 import hashlib
 import os
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 import tempfile
-import platform
 import threading
+import time
 from collections.abc import Mapping, Sequence
 
 import numpy as np
-from scipy.sparse import coo_matrix, csr_matrix
+from scipy.sparse import csr_matrix
 
 
 class NativeUnavailable(RuntimeError):
@@ -32,6 +32,24 @@ _TOKENS = ("", "H;") + tuple(f"P{i};" for i in range(9)) + tuple(
 )
 _ENCODE = {token: i for i, token in enumerate(_TOKENS) if token}
 _ACTION_TABLE = tuple(tuple(i for i in range(9) if mask & (1 << i)) for mask in range(512))
+
+
+def _memory_status() -> str:
+    try:
+        values = {}
+        for line in Path("/proc/self/status").read_text().splitlines():
+            if line.startswith(("VmRSS:", "VmHWM:")):
+                key, rest = line.split(":", 1)
+                values[key] = float(rest.split()[0]) / 1024.0
+        if values:
+            return f"rss={values.get('VmRSS', float('nan')):.1f} MiB peak={values.get('VmHWM', float('nan')):.1f} MiB"
+    except OSError:
+        pass
+    return "rss=n/a"
+
+
+def _log(message: str) -> None:
+    print(f"[exact/native] {message} [{_memory_status()}]", flush=True)
 
 
 def encode_observations(observations):
@@ -62,8 +80,9 @@ def load_native():
     if compiler is None:
         raise NativeUnavailable("g++ or clang++ is needed for native enumeration")
     flags = ["-O3", "-std=c++17", "-shared", "-fPIC"]
+    started = time.perf_counter()
     try:
-        identity = f"{compiler}|{flags}|{platform.system()}|{platform.machine()}|abi2".encode()
+        identity = f"{compiler}|{flags}|{platform.system()}|{platform.machine()}|abi3".encode()
         digest = hashlib.sha256(source.read_bytes() + identity).hexdigest()[:20]
         cache = source.parent / "__pycache__"
         cache.mkdir(exist_ok=True)
@@ -71,6 +90,7 @@ def load_native():
         raise NativeUnavailable(str(error)) from error
     target = cache / f"sequence_form_native_{digest}.so"
     if not target.exists():
+        _log(f"Compiling native enumerator with {Path(compiler).name}...")
         temporary = None
         try:
             with tempfile.NamedTemporaryFile(dir=cache, suffix=".so", delete=False) as stream:
@@ -91,6 +111,7 @@ def load_native():
         lib = ctypes.CDLL(str(target))
     except OSError as error:
         raise NativeUnavailable(str(error)) from error
+
     u64, u16 = ctypes.c_uint64, ctypes.c_uint16
     lib.ttn_information_model.argtypes = []
     lib.ttn_information_model.restype = ctypes.c_char_p
@@ -108,6 +129,9 @@ def load_native():
     lib.ttn_count.restype = u64
     lib.ttn_data.argtypes = [ctypes.c_void_p, ctypes.c_int]
     lib.ttn_data.restype = ctypes.c_void_p
+    lib.ttn_payoff_csr.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p,
+                                   ctypes.c_void_p, ctypes.POINTER(ctypes.c_double)]
+    lib.ttn_payoff_csr.restype = ctypes.c_int
     lib.ttn_control_new.argtypes = []
     lib.ttn_control_new.restype = ctypes.c_void_p
     for name in ("ttn_control_cancel", "ttn_control_free"):
@@ -121,41 +145,44 @@ def load_native():
                                            ctypes.POINTER(ctypes.c_double)]
     lib.ttn_best_response_plan.restype = ctypes.c_int
     _library = lib
+    _log(f"Native library ready in {time.perf_counter() - started:.2f}s")
     return lib
 
 
 def _enumerate_interruptibly(lib, arguments):
-    """Keep Python's main thread responsive while C++ owns its allocations."""
+    """Keep Python responsive while C++ owns the large enumeration allocations."""
     control = lib.ttn_control_new()
     if not control:
         raise MemoryError(lib.ttn_error().decode())
     finished = threading.Event()
     result = {}
+
     def enumerate_tree():
         try:
             result["pointer"] = lib.ttn_build(*arguments, control)
-            # Native error storage is thread-local: copy it on this thread.
             result["error"] = lib.ttn_error().decode("utf-8", errors="replace")
         except BaseException as error:
             result["exception"] = error
         finally:
             finished.set()
+
     worker = threading.Thread(target=enumerate_tree, name="exact-enumeration")
-    try:
-        worker.start()
-    except BaseException:
-        lib.ttn_control_free(control)
-        raise
+    worker.start()
+    started = time.perf_counter()
+    next_report = 10.0
     try:
         while not finished.wait(0.1):
-            pass
+            elapsed = time.perf_counter() - started
+            if elapsed >= next_report:
+                _log(f"Native enumeration still running: {elapsed:.1f}s elapsed")
+                next_report += 10.0
     except BaseException:
         lib.ttn_control_cancel(control)
         while not finished.is_set():
             try:
                 finished.wait(0.1)
             except KeyboardInterrupt:
-                pass  # Finish freeing native allocations before propagating.
+                pass
         if result.get("pointer"):
             lib.ttn_free(result["pointer"])
         raise
@@ -163,22 +190,20 @@ def _enumerate_interruptibly(lib, arguments):
         lib.ttn_control_free(control)
     if "exception" in result:
         raise result["exception"]
-    if not result["pointer"]:
-        raise RuntimeError(result["error"])
+    if not result.get("pointer"):
+        raise RuntimeError(result.get("error") or "Unknown native enumeration failure")
+    _log(f"Native traversal + payoff aggregation finished in {time.perf_counter() - started:.2f}s")
     return result["pointer"]
 
 
 class _InfoMapping(Mapping):
     def __init__(self, catalog):
         self.catalog = catalog
-
     def __len__(self):
         return len(self.catalog.parent_sequences)
-
     def __iter__(self):
         for i in range(len(self)):
             yield self.catalog.key_at(i)
-
     def __getitem__(self, key):
         cat = self.catalog
         if not key.startswith(cat.prefix):
@@ -191,25 +216,20 @@ class _InfoMapping(Mapping):
         if len(indices) != 1:
             raise KeyError(key)
         return cat.info_at(int(indices[0]), key)
-
     def items(self):
         for i in range(len(self)):
             key = self.catalog.key_at(i)
             yield key, self.catalog.info_at(i, key)
-
     def values(self):
         for i in range(len(self)):
             yield self.catalog.info_at(i)
 
 
 class _SequenceLabels(Sequence):
-    """Compatibility view; enumeration never constructs per-sequence strings."""
     def __init__(self, catalog):
         self.catalog = catalog
-
     def __len__(self):
         return self.catalog.n_sequences
-
     def __getitem__(self, index):
         if isinstance(index, slice):
             return [self[i] for i in range(*index.indices(len(self)))]
@@ -239,21 +259,17 @@ class NativeSequenceCatalog:
     @property
     def n_sequences(self):
         return self._n_sequences
-
     @property
     def n_constraints(self):
         return 1 + len(self.parent_sequences)
-
     def key_at(self, i):
         return self.prefix + decode_observations(self.obs_low[i], self.obs_high[i])
-
     def info_at(self, i, key=None):
         from sequence_form_lp import InfoSet
         actions = _ACTION_TABLE[int(self.action_masks[i])]
         first = int(self.first_children[i])
-        return InfoSet(self.key_at(i) if key is None else key,
-                       int(self.parent_sequences[i]), actions, tuple(range(first, first + len(actions))))
-
+        return InfoSet(self.key_at(i) if key is None else key, int(self.parent_sequences[i]),
+                       actions, tuple(range(first, first + len(actions))))
     def iter_supported_infos(self, realization):
         for index in np.flatnonzero(realization[self.parent_sequences] > 0):
             key = self.key_at(index)
@@ -262,8 +278,6 @@ class NativeSequenceCatalog:
     def realization_matrix(self):
         if self._realization is not None:
             return self._realization
-        # Each sequence except the empty one is the child of exactly one info.
-        # CSR rows contain the parent followed by its contiguous child range.
         n_info = len(self.parent_sequences)
         dtype = np.int32 if self.n_sequences + n_info < 2**31 else np.int64
         starts = self.first_children.astype(dtype)
@@ -283,7 +297,7 @@ class NativeSequenceCatalog:
         indices[child_positions] = np.arange(1, self.n_sequences, dtype=dtype)
         rhs = np.zeros(n_info + 1)
         rhs[0] = 1.0
-        matrix = csr_matrix((data, indices, indptr), shape=(n_info + 1, self.n_sequences))
+        matrix = csr_matrix((data, indices, indptr), shape=(n_info + 1, self.n_sequences), copy=False)
         self._realization = matrix, rhs
         return self._realization
 
@@ -347,14 +361,11 @@ class NativeSequenceCatalog:
         parents = self.parent_sequences[owners[1:]]
         denominators = counts[owners[1:]]
         values = np.ones(self.n_sequences)
-        # A player attempts each of the nine cells at most once. Each pass
-        # propagates one additional own-action depth through the full catalog.
         for _ in range(9):
             values[1:] = values[parents] / denominators
         return values
 
     def restricted(self, keep):
-        """Realization polytope with all sequences outside ``keep`` fixed to zero."""
         keep = np.asarray(keep, dtype=np.int64)
         if keep.ndim != 1 or len(keep) == 0 or keep[0] != 0 or keep[-1] >= self.n_sequences or np.any(np.diff(keep) <= 0):
             raise ValueError("Restricted sequences must be sorted, unique, and include the empty sequence")
@@ -367,8 +378,7 @@ class NativeSequenceCatalog:
         active[keep] = True
         if not np.array_equal(infos, np.flatnonzero(active[self.parent_sequences])):
             raise ValueError("Restricted game omits a decision at a reachable information set")
-        masks = (np.bitwise_or.reduceat(bits[keep[1:]], starts) if len(starts)
-                 else np.empty(0, dtype=np.uint16))
+        masks = (np.bitwise_or.reduceat(bits[keep[1:]], starts) if len(starts) else np.empty(0, dtype=np.uint16))
         arrays = [self.obs_low[infos], self.obs_high[infos], parents.astype(np.uint64),
                   (starts + 1).astype(np.uint64), masks]
         return NativeSequenceCatalog(self.player, self.rules, arrays, len(keep))
@@ -384,30 +394,58 @@ def build_native(rules, root, node_limit=0):
         raise ValueError("Invalid root board masks")
     if root.turn not in (O, X) or root.o_mask & root.x_mask:
         raise ValueError("Invalid root state")
+
+    total_started = time.perf_counter()
     lib = load_native()
+    _log("Starting complete native history traversal and chunked payoff aggregation")
     pointer = _enumerate_interruptibly(lib, (rules.hidden_mask, rules.start_player,
                             root.o_mask, root.x_mask, root.tried_o, root.tried_x, root.turn,
                             *encode_observations(root.obs_o), *encode_observations(root.obs_x), node_limit))
+
     def array(field, count, ctype):
         if not count:
             return np.empty(0, dtype=np.dtype(ctype))
         raw = ctypes.cast(lib.ttn_data(pointer, field), ctypes.POINTER(ctype))
         return np.ctypeslib.as_array(raw, shape=(count,))
+
     try:
-        histories, terminals, no, nx, so, sx, nnz = [int(lib.ttn_count(pointer, i)) for i in range(7)]
+        histories, terminals, no, nx, so, sx, nnz, decisive, flushes = [int(lib.ttn_count(pointer, i)) for i in range(9)]
         if max(so, sx) >= 2**63 or histories >= 2**53:
             raise RuntimeError("Game exceeds exact sparse-index/payoff representation capacity")
+        ratio = decisive / nnz if nnz else float("inf")
+        _log(
+            f"Enumeration counts: histories={histories:,} terminals={terminals:,} decisive={decisive:,}; "
+            f"O infos={no:,} X infos={nx:,}; O seq={so:,} X seq={sx:,}; "
+            f"payoff nnz={nnz:,} compression={ratio:.2f}x flushes={flushes:,}"
+        )
+
+        started = time.perf_counter()
         catalogs = []
         for offset, player, count, seqs in ((0, O, no, so), (5, X, nx, sx)):
             arrays = [array(offset + j, count, ctypes.c_uint16 if j == 4 else ctypes.c_uint64).copy()
                       for j in range(5)]
             catalogs.append(NativeSequenceCatalog(player, rules, arrays, seqs))
-        rows = array(10, nnz, ctypes.c_uint64).view(np.int64)
-        cols = array(11, nnz, ctypes.c_uint64).view(np.int64)
-        values = array(12, nnz, ctypes.c_int8).astype(float)
-        payoff = coo_matrix((values, (rows, cols)), shape=(so, sx)).tocsr()
-        payoff.sum_duplicates()
-        payoff.eliminate_zeros()
+        _log(f"Copied compact sequence catalogs in {time.perf_counter() - started:.2f}s")
+
+        started = time.perf_counter()
+        use32 = max(so, sx, nnz) < 2**31
+        index_dtype = np.int32 if use32 else np.int64
+        indptr = np.empty(so + 1, dtype=index_dtype)
+        indices = np.empty(nnz, dtype=index_dtype)
+        values = np.empty(nnz, dtype=np.float64)
+        status = lib.ttn_payoff_csr(
+            pointer, 32 if use32 else 64,
+            ctypes.c_void_p(indptr.ctypes.data), ctypes.c_void_p(indices.ctypes.data),
+            values.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+        )
+        if status:
+            raise RuntimeError(lib.ttn_error().decode() or f"Native payoff CSR export failed with status {status}")
+        payoff = csr_matrix((values, indices, indptr), shape=(so, sx), copy=False)
+        _log(
+            f"Materialized final payoff CSR directly in {time.perf_counter() - started:.2f}s: "
+            f"shape={payoff.shape} nnz={payoff.nnz:,} index={index_dtype.__name__}"
+        )
+        _log(f"Native game build complete in {time.perf_counter() - total_started:.2f}s")
         return SequenceGame(rules, *catalogs, payoff, histories, terminals)
     finally:
         lib.ttn_free(pointer)
