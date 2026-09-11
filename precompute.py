@@ -88,6 +88,17 @@ def artifact_matches_information_model(artifact: dict) -> bool:
     )
 
 
+def artifact_matches_requested_lp_backend(artifact: dict) -> bool:
+    """Honor an explicitly requested backend when deciding whether to reuse output."""
+    if _lp_backend == "auto":
+        return True
+    solver = str(artifact.get("solver", "")).lower()
+    if _lp_backend == "scipy":
+        # Accept both the current name and legacy SciPy/linprog artifact labels.
+        return "scipy" in solver
+    return solver.startswith("highspy")
+
+
 def swap_players(artifact: dict) -> dict:
     """Relabel an exact equilibrium under the O <-> X game isomorphism."""
     if not artifact_matches_information_model(artifact):
@@ -153,9 +164,15 @@ def solve_exact_compact(mask: int, start: str, node_limit: int, force: bool) -> 
         except (ValueError, TypeError, OSError):
             existing = None
         if isinstance(existing, dict) and artifact_matches_information_model(existing):
-            print(f"SKIP exact  mask={mask:03d} start={start}  ({out.name} is current)")
-            return out
-        print(f"STALE exact mask={mask:03d} start={start}  ({out.name} uses an older information model; recomputing)")
+            if artifact_matches_requested_lp_backend(existing):
+                print(f"SKIP exact  mask={mask:03d} start={start}  ({out.name} is current)")
+                return out
+            print(
+                f"STALE exact mask={mask:03d} start={start}  "
+                f"({out.name} backend={existing.get('solver')!r}, requested={_lp_backend}; recomputing)"
+            )
+        else:
+            print(f"STALE exact mask={mask:03d} start={start}  ({out.name} uses an older information model; recomputing)")
 
     counterpart = batch.EXACT_DIR / f"mask-{mask}-{'X' if start == 'O' else 'O'}.json"
     if counterpart.exists() and (not force or counterpart in _completed_this_run):
@@ -167,9 +184,12 @@ def solve_exact_compact(mask: int, start: str, node_limit: int, force: bool) -> 
                 raise ValueError("Counterpart hidden cells mismatch")
             if node_limit and source["counts"]["histories"] > node_limit:
                 raise ValueError("Counterpart exceeds requested node limit")
+            if not artifact_matches_requested_lp_backend(source):
+                raise ValueError("Counterpart LP backend does not match the requested backend")
             artifact = swap_players(source)
         except (ValueError, KeyError, TypeError, AttributeError, OSError):
-            # An incompatible, stale, or incomplete counterpart never replaces a full solve.
+            # An incompatible, stale, incomplete, or backend-mismatched counterpart
+            # never replaces a solve requested with a specific backend.
             pass
         else:
             from sequence_form_lp_compact import write_artifact
