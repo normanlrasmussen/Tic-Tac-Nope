@@ -22,7 +22,9 @@ def test_extract_lp_backend_equals_form():
     assert argv == ["precompute.py", "--mode", "two-hidden"]
 
 
-def test_compact_exact_command_forwards_scipy_backend():
+def test_compact_exact_command_matches_native_scipy_standalone_path():
+    # mask 15 is hidden cells 1,2,3,4, the same production-scale case used
+    # for the standalone native+SciPy benchmark.
     with tempfile.TemporaryDirectory() as directory:
         directory = Path(directory)
         with (
@@ -30,10 +32,14 @@ def test_compact_exact_command_forwards_scipy_backend():
             patch.object(precompute.batch, "run_command") as run,
             patch.object(precompute, "_lp_backend", "scipy"),
         ):
-            precompute.solve_exact_compact(3, "O", 0, True)
+            precompute.solve_exact_compact(15, "O", 0, True)
 
         command = run.call_args.args[0]
-        backend_index = command.index("--lp-backend")
-        assert command[backend_index + 1] == "scipy"
         hidden_index = command.index("--hidden")
-        assert command[hidden_index + 1] == "1,2"
+        start_index = command.index("--start")
+        enumerator_index = command.index("--enumerator")
+        backend_index = command.index("--lp-backend")
+        assert command[hidden_index + 1] == "1,2,3,4"
+        assert command[start_index + 1] == "O"
+        assert command[enumerator_index + 1] == "native"
+        assert command[backend_index + 1] == "scipy"
