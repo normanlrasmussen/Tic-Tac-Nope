@@ -110,21 +110,14 @@ def artifact_matches_information_model(artifact: dict) -> bool:
     )
 
 
-def artifact_matches_requested_lp_backend(artifact: dict) -> bool:
-    """Honor an explicitly requested backend when deciding whether to reuse output."""
-    if _lp_backend == "auto":
-        return True
-    solver = str(artifact.get("solver", "")).lower()
-    if _lp_backend == "scipy":
-        # Accept both the current name and legacy SciPy/linprog artifact labels.
-        return "scipy" in solver
-    if _lp_backend == "highspy-reduced":
-        return solver.startswith("highspy") and "reduced" in solver
-    return solver.startswith("highspy") and "reduced" not in solver
-
-
 def solve_exact_compact(mask: int, start: str, node_limit: int, force: bool) -> Path:
-    """Solve one exact start-player configuration; never synthesize its counterpart."""
+    """Solve one exact start-player configuration; never synthesize its counterpart.
+
+    The LP backend is an execution preference, not part of the artifact's game
+    semantics.  A current, certified artifact therefore remains reusable when
+    a different backend is requested.  ``--force`` is the explicit opt-in for
+    regenerating existing outputs with that backend.
+    """
     out = batch.EXACT_DIR / f"mask-{mask}-{start}.json"
     if out.exists() and not force:
         try:
@@ -132,13 +125,11 @@ def solve_exact_compact(mask: int, start: str, node_limit: int, force: bool) -> 
         except (ValueError, TypeError, OSError):
             existing = None
         if isinstance(existing, dict) and artifact_matches_information_model(existing):
-            if artifact_matches_requested_lp_backend(existing):
-                print(f"SKIP exact  mask={mask:03d} start={start}  ({out.name} is current)")
-                return out
             print(
-                f"STALE exact mask={mask:03d} start={start}  "
-                f"({out.name} backend={existing.get('solver')!r}, requested={_lp_backend}; recomputing)"
+                f"SKIP exact  mask={mask:03d} start={start}  "
+                f"({out.name} is current; stored backend={existing.get('solver')!r})"
             )
+            return out
         else:
             print(f"STALE exact mask={mask:03d} start={start}  ({out.name} uses an older information model; recomputing)")
 
