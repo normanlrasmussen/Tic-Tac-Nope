@@ -18,6 +18,13 @@ from sequence_form_lp import INFORMATION_MODEL
 
 _lp_backend = "auto"
 
+_DEFAULT_BATCH_ARGS = (
+    "--mode", "all",
+    "--solvers", "exact",
+    "--lp-backend", "auto",
+    "--keep-going",
+)
+
 
 def _extract_lp_backend(argv: list[str]) -> tuple[str, list[str]]:
     """Remove precompute.py's compact-solver-only backend option from argv.
@@ -49,6 +56,24 @@ def _extract_lp_backend(argv: list[str]) -> tuple[str, list[str]]:
             )
         backend = value
     return backend, cleaned
+
+
+def _apply_default_arguments(argv: list[str]) -> list[str]:
+    """Add the safe production defaults while preserving explicit overrides."""
+    if any(argument in ("--help", "-h") for argument in argv[1:]):
+        return list(argv)
+
+    result = list(argv)
+    options = set(argv[1:])
+    if not any(argument == "--mode" or argument.startswith("--mode=") for argument in argv[1:]):
+        result.extend(_DEFAULT_BATCH_ARGS[0:2])
+    if not any(argument == "--solvers" or argument.startswith("--solvers=") for argument in argv[1:]):
+        result.extend(_DEFAULT_BATCH_ARGS[2:4])
+    if not any(argument == "--lp-backend" or argument.startswith("--lp-backend=") for argument in argv[1:]):
+        result.extend(_DEFAULT_BATCH_ARGS[4:6])
+    if "--keep-going" not in options:
+        result.append("--keep-going")
+    return result
 
 
 def keep_awake() -> None:
@@ -136,6 +161,7 @@ def solve_exact_compact(mask: int, start: str, node_limit: int, force: bool) -> 
 batch.solve_exact = solve_exact_compact
 
 if __name__ == "__main__":
+    sys.argv[:] = _apply_default_arguments(sys.argv)
     keep_awake()
     _lp_backend, cleaned_argv = _extract_lp_backend(sys.argv)
     sys.argv[:] = cleaned_argv

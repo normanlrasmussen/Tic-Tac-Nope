@@ -7,6 +7,27 @@ from unittest.mock import patch
 import precompute
 
 
+def test_default_batch_arguments_are_safe_and_complete():
+    assert precompute._apply_default_arguments(["precompute.py"]) == [
+        "precompute.py",
+        "--mode", "all",
+        "--solvers", "exact",
+        "--lp-backend", "auto",
+        "--keep-going",
+    ]
+
+
+def test_default_batch_arguments_preserve_explicit_overrides():
+    argv = [
+        "precompute.py",
+        "--mode=two-hidden",
+        "--solvers", "mccfr",
+        "--lp-backend=highspy",
+        "--keep-going",
+    ]
+    assert precompute._apply_default_arguments(argv) == argv
+
+
 def test_extract_lp_backend_preserves_batch_arguments():
     backend, argv = precompute._extract_lp_backend(
         ["precompute.py", "--solvers", "exact", "--lp-backend", "scipy", "--keep-going"]
