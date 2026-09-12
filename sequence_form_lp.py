@@ -12,15 +12,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 import numpy as np
-from scipy.optimize import OptimizeResult, linprog
-from scipy.sparse import coo_matrix, csc_matrix, csr_matrix, hstack, vstack
+from scipy.optimize import OptimizeResult
+from scipy.sparse import coo_matrix, csr_matrix
 
 X, O = 1, 2
 FULL_MASK = 0x1FF
@@ -349,112 +348,17 @@ def _certify_realization_pair(E, e, F, f, payoff_self, realization, opponent_rea
 
 
 def _solve_scipy(E, e, F, f, payoff_self, n_x, n_p) -> OptimizeResult:
-    started = time.perf_counter()
-    _log("SciPy fallback: assembling full augmented equality matrix")
-    A_eq = hstack([E.tocsc(), csc_matrix((E.shape[0], n_p), dtype=float)], format="csc")
-    _log(f"A_eq ready: shape={A_eq.shape} nnz={A_eq.nnz:,} size={_matrix_mib(A_eq):.1f} MiB")
-    _log("SciPy fallback: assembling full augmented inequality matrix")
-    A_ub = hstack([-payoff_self.T, F.T], format="csc")
-    _log(f"A_ub ready: shape={A_ub.shape} nnz={A_ub.nnz:,} size={_matrix_mib(A_ub):.1f} MiB")
-    c = np.zeros(n_x + n_p, dtype=float); c[n_x:] = -f
-    bounds = np.empty((n_x + n_p, 2), dtype=float)
-    bounds[:, 0] = 0.0; bounds[n_x:, 0] = -np.inf; bounds[:, 1] = np.inf
-    _log(f"Calling scipy.optimize.linprog after {time.perf_counter()-started:.2f}s of LP assembly")
-    solve_started = time.perf_counter()
-    result = linprog(c, A_ub=A_ub, b_ub=np.zeros(F.shape[1]), A_eq=A_eq, b_eq=e,
-                     bounds=bounds, method="highs",
-                     options={"presolve": True, "primal_feasibility_tolerance": FEASIBILITY_TOLERANCE,
-                              "dual_feasibility_tolerance": FEASIBILITY_TOLERANCE})
-    _log(f"SciPy/HiGHS returned in {time.perf_counter()-solve_started:.2f}s")
-    result.solver_backend = "scipy-highs-augmented"
-    return result
+    """Compatibility wrapper for the split SciPy backend."""
+    from sequence_form_lp_scipy import solve_scipy
+
+    return solve_scipy(E, e, F, f, payoff_self, n_x, n_p)
 
 
 def _solve_highspy_streaming(E, e, F, f, payoff_self, n_x, n_p) -> OptimizeResult:
-    try:
-        import highspy
-    except ImportError as error:
-        raise ModuleNotFoundError("highspy is not installed") from error
+    """Compatibility wrapper for the split streaming highspy backend."""
+    from sequence_form_lp_highspy import solve_highspy_streaming
 
-    chunk_cols = max(1, int(os.environ.get("TTN_HIGHS_CHUNK_COLS", "50000")))
-    total_rows = E.shape[0] + F.shape[1]
-    inf = highspy.kHighsInf
-    highs = highspy.Highs()
-    highs.setOptionValue("output_flag", False)
-    highs.setOptionValue("presolve", "on")
-    highs.setOptionValue("primal_feasibility_tolerance", FEASIBILITY_TOLERANCE)
-    highs.setOptionValue("dual_feasibility_tolerance", FEASIBILITY_TOLERANCE)
-
-    row_lower = np.concatenate([e, np.full(F.shape[1], -inf, dtype=float)])
-    row_upper = np.concatenate([e, np.zeros(F.shape[1], dtype=float)])
-    _log(f"highspy: creating {total_rows:,} LP rows before streaming columns")
-    status = highs.addRows(total_rows, row_lower, row_upper, 0, 0, 0, 0)
-    if status == highspy.HighsStatus.kError:
-        raise RuntimeError("highspy rejected empty LP rows")
-    del row_lower, row_upper
-
-    E_csc = E.tocsc()
-    streamed_nnz = 0
-    started = time.perf_counter()
-    for lo in range(0, n_x, chunk_cols):
-        hi = min(n_x, lo + chunk_cols)
-        block = vstack([E_csc[:, lo:hi], -payoff_self[lo:hi, :].T], format="csc")
-        # Native payoff aggregation can leave equal sequence-pair entries in
-        # different flushes.  SciPy permits duplicate sparse indices, but the
-        # HiGHS column API rejects them.  Canonicalize each bounded block here
-        # so streaming remains memory-bounded and the streamed model has the
-        # same summed payoff as sparse matrix multiplication.
-        if not block.has_canonical_format:
-            block.sum_duplicates()
-            block.eliminate_zeros()
-        m = hi - lo
-        status = highs.addCols(m, np.zeros(m), np.zeros(m), np.full(m, inf),
-                               block.nnz, block.indptr[:-1], block.indices, block.data)
-        if status == highspy.HighsStatus.kError:
-            raise RuntimeError(f"highspy rejected realization columns {lo}:{hi}")
-        streamed_nnz += block.nnz
-        if hi == n_x or (lo // chunk_cols) % 10 == 0:
-            _log(f"highspy: streamed realization cols {hi:,}/{n_x:,}; nnz copied={streamed_nnz:,}")
-        del block
-    del E_csc
-
-    n_eq = E.shape[0]
-    for lo in range(0, n_p, chunk_cols):
-        hi = min(n_p, lo + chunk_cols)
-        source = F[lo:hi, :].T.tocsc()
-        shifted = source.indices.astype(np.int64 if total_rows >= 2**31 else np.int32, copy=True)
-        shifted += n_eq
-        block = csc_matrix((source.data, shifted, source.indptr), shape=(total_rows, hi - lo), copy=False)
-        costs = -f[lo:hi]
-        m = hi - lo
-        status = highs.addCols(m, costs, np.full(m, -inf), np.full(m, inf),
-                               block.nnz, block.indptr[:-1], block.indices, block.data)
-        if status == highspy.HighsStatus.kError:
-            raise RuntimeError(f"highspy rejected potential columns {lo}:{hi}")
-        streamed_nnz += block.nnz
-        if hi == n_p or (lo // chunk_cols) % 10 == 0:
-            _log(f"highspy: streamed potential cols {hi:,}/{n_p:,}; nnz copied={streamed_nnz:,}")
-        del source, shifted, block
-
-    _log(f"highspy LP streaming complete in {time.perf_counter()-started:.2f}s; starting HiGHS solve")
-    solve_started = time.perf_counter()
-    status = highs.run()
-    model_status = highs.modelStatusToString(highs.getModelStatus())
-    _log(f"highspy/HiGHS returned in {time.perf_counter()-solve_started:.2f}s with status={model_status}")
-    if status == highspy.HighsStatus.kError or "Optimal" not in model_status:
-        raise RuntimeError(f"HiGHS failed: {model_status}")
-    solution = highs.getSolution()
-    col_value = np.asarray(solution.col_value, dtype=float)
-    row_dual = np.asarray(solution.row_dual, dtype=float)
-    result = OptimizeResult()
-    result.success = True; result.status = 0; result.message = model_status
-    result.x = col_value; result.fun = float(highs.getObjectiveValue())
-    result.eqlin = OptimizeResult(marginals=row_dual[:n_eq])
-    result.ineqlin = OptimizeResult(marginals=row_dual[n_eq:])
-    info = highs.getInfo()
-    result.nit = int(getattr(info, "simplex_iteration_count", 0) or 0) + int(getattr(info, "ipm_iteration_count", 0) or 0)
-    result.solver_backend = "highspy-streaming"
-    return result
+    return solve_highspy_streaming(E, e, F, f, payoff_self, n_x, n_p)
 
 
 def solve_max_player(self_catalog: SequenceCatalog, opp_catalog: SequenceCatalog, payoff_self: csr_matrix,

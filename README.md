@@ -242,3 +242,13 @@ Run a quick AI smoke check with:
 python -c "from simulation import make_initial_state, algorithm_decision; from algo import O; s=make_initial_state((1,3)); print(algorithm_decision(s['o_beliefs'], s['o_splits'], O)[0])"
 ```
 
+Run all production LP backends on two reproducible random two-hidden-cell games
+with:
+
+```bash
+python tests/smoke_all_lp_backends.py
+```
+
+This exercises `scipy`, `highspy`, and `auto`, and prints each certified value
+interval, exploitability gap, selected solver, and runtime. Use `--seed` to
+choose a different reproducible pair of hidden-cell layouts.
