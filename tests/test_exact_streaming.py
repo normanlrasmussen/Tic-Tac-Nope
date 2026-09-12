@@ -88,3 +88,23 @@ def test_highspy_streaming_canonicalizes_duplicate_payoff_indices():
                                          payoff, n_x=2, n_p=1)
     assert result.success
     np.testing.assert_allclose(result.x[:2].sum(), 1.0, atol=lp.FEASIBILITY_TOLERANCE)
+
+
+@pytest.mark.skipif(importlib.util.find_spec("highspy") is None, reason="highspy unavailable")
+@pytest.mark.parametrize(
+    "backend, solver_name",
+    [
+        ("highspy-reduced-simplex", "simplex"),
+        ("highspy-reduced-hipo", "hipo"),
+        ("highspy-reduced-ipx", "ipx"),
+    ],
+)
+def test_reduced_highspy_solver_choices_are_certified(backend, solver_name):
+    rules = lp.Rules(3, lp.O)
+    root = _late_game(3)
+    with patch.object(lp, "make_root", return_value=root):
+        game = lp.build_sequence_game_python(rules)
+    _, _, lower, upper, result = lp.solve_equilibrium(game, backend=backend)
+    assert result.timings["highsSolver"] == solver_name
+    assert result.certificate["exploitabilityGap"] <= lp.FEASIBILITY_TOLERANCE
+    np.testing.assert_allclose(lower, upper, atol=lp.FEASIBILITY_TOLERANCE)

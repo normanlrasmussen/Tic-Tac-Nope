@@ -44,6 +44,19 @@ def test_extract_lp_backend_equals_form():
     assert argv == ["precompute.py", "--mode", "two-hidden"]
 
 
+def test_extract_lp_backend_accepts_reduced_solver_choices():
+    choices = (
+        "highspy-reduced-simplex", "highspy-reduced-hipo",
+        "highspy-reduced-ipx", "gurobi-reduced-barrier",
+    )
+    for choice in choices:
+        backend, argv = precompute._extract_lp_backend(
+            ["precompute.py", "--lp-backend", choice]
+        )
+        assert backend == choice
+        assert argv == ["precompute.py"]
+
+
 def test_compact_exact_command_matches_native_scipy_standalone_path():
     with tempfile.TemporaryDirectory() as directory:
         directory = Path(directory)

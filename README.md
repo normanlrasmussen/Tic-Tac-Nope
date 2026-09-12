@@ -267,3 +267,8 @@ The exact deterministic-flow reduction is opt-in with
 `--lp-backend highspy-reduced`. It contracts only one-action information-set
 flow equalities, lifts the result to the original sequence space, and runs the
 unchanged full-game certificate. It is not selected by `auto`.
+
+Reduced optimizer choices are also available as explicit options:
+`highspy-reduced-simplex`, `highspy-reduced-hipo`,
+`highspy-reduced-ipx`, and `gurobi-reduced-barrier`. The first three require
+HiGHS through `highspy`; the last requires the optional `gurobipy` package.

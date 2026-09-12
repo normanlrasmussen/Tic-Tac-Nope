@@ -26,7 +26,15 @@ if str(ROOT) not in sys.path:
 import sequence_form_lp as lp
 
 
-BACKENDS = ("scipy", "highspy", "auto")
+BACKENDS = (
+    "scipy",
+    "highspy",
+    "auto",
+    "highspy-reduced-simplex",
+    "highspy-reduced-hipo",
+    "highspy-reduced-ipx",
+    "gurobi-reduced-barrier",
+)
 
 
 def random_cases(seed: int, count: int) -> list[tuple[int, tuple[int, int]]]:
@@ -48,8 +56,8 @@ def run_backend(game: lp.SequenceGame, backend: str) -> float | None:
     try:
         _, _, lower, upper, result = lp.solve_equilibrium(game, backend=backend)
     except ModuleNotFoundError as error:
-        if backend == "highspy":
-            print(f"  {backend:7s} UNAVAILABLE: {error}", flush=True)
+        if backend.startswith("highspy") or backend.startswith("gurobi"):
+            print(f"  {backend:24s} UNAVAILABLE: {error}", flush=True)
             return None
         raise
 
@@ -62,7 +70,7 @@ def run_backend(game: lp.SequenceGame, backend: str) -> float | None:
             f"exploitability_gap={certificate_gap:.3e}"
         )
     print(
-        f"  {backend:7s} PASS solver={result.solver_backend:<24s} "
+        f"  {backend:24s} PASS solver={result.solver_backend:<24s} "
         f"value={0.5 * (lower + upper): .12g} "
         f"interval=[{lower:.12g}, {upper:.12g}] "
         f"gap={gap:.3e} time={elapsed:.2f}s",
@@ -114,12 +122,12 @@ def main() -> None:
     for backend in BACKENDS:
         if backend_runs[backend]:
             print(
-                f"  {backend:7s} {backend_totals[backend]:.2f}s "
+                f"  {backend:24s} {backend_totals[backend]:.2f}s "
                 f"({backend_runs[backend]} run(s))",
                 flush=True,
             )
         else:
-            print(f"  {backend:7s} unavailable", flush=True)
+            print(f"  {backend:24s} unavailable", flush=True)
 
 
 if __name__ == "__main__":

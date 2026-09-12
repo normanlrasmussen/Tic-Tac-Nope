@@ -40,7 +40,7 @@ def _extract_lp_backend(argv: list[str]) -> tuple[str, list[str]]:
         argument = argv[index]
         if argument == "--lp-backend":
             if index + 1 >= len(argv):
-                raise SystemExit("--lp-backend requires one of: auto, highspy, scipy, highspy-reduced")
+                raise SystemExit("--lp-backend requires a supported exact LP backend")
             value = argv[index + 1]
             index += 2
         elif argument.startswith("--lp-backend="):
@@ -50,9 +50,13 @@ def _extract_lp_backend(argv: list[str]) -> tuple[str, list[str]]:
             cleaned.append(argument)
             index += 1
             continue
-        if value not in ("auto", "highspy", "scipy", "highspy-reduced"):
+        if value not in (
+            "auto", "highspy", "scipy", "highspy-reduced",
+            "highspy-reduced-simplex", "highspy-reduced-hipo",
+            "highspy-reduced-ipx", "gurobi-reduced-barrier",
+        ):
             raise SystemExit(
-                f"invalid --lp-backend {value!r}; choose auto, highspy, scipy, or highspy-reduced"
+                f"invalid --lp-backend {value!r}; choose a supported exact LP backend"
             )
         backend = value
     return backend, cleaned
@@ -159,7 +163,7 @@ if __name__ == "__main__":
     _lp_backend, cleaned_argv = _extract_lp_backend(sys.argv)
     sys.argv[:] = cleaned_argv
     if "--help" in sys.argv or "-h" in sys.argv:
-        print("precompute.py exact-solver option: --lp-backend {auto,highspy,scipy,highspy-reduced}\n")
+        print("precompute.py exact-solver option: --lp-backend {auto,highspy,scipy,highspy-reduced,highspy-reduced-simplex,highspy-reduced-hipo,highspy-reduced-ipx,gurobi-reduced-barrier}\n")
     elif _lp_backend != "auto":
         print(f"Exact LP backend forced to: {_lp_backend}", flush=True)
     batch.main()

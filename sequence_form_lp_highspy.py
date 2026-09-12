@@ -12,13 +12,8 @@ from scipy.sparse import csc_matrix, vstack
 from sequence_form_lp import FEASIBILITY_TOLERANCE, _log
 
 
-def _set_highs_options(highs, highspy) -> dict[str, object]:
-    """Configure the permitted direct HiGHS simplex choices.
-
-    ``choose`` is retained as the reference setting.  ``dual`` explicitly
-    selects the dual simplex path.  No interior-point/HiPO setting is accepted
-    here, including through environment configuration.
-    """
+def _set_highs_options(highs, highspy, *, solver: str | None = None) -> dict[str, object]:
+    """Configure direct or explicitly selected HiGHS solver choices."""
     # Preserve the pre-optimization production choice by default.  The
     # explicit dual setting is available to the benchmark harness and may only
     # become a production default after it demonstrates a certified win.
@@ -30,7 +25,12 @@ def _set_highs_options(highs, highspy) -> dict[str, object]:
     highs.setOptionValue("presolve", "on")
     highs.setOptionValue("primal_feasibility_tolerance", FEASIBILITY_TOLERANCE)
     highs.setOptionValue("dual_feasibility_tolerance", FEASIBILITY_TOLERANCE)
-    if mode == "dual":
+    if solver is not None and solver not in {"simplex", "hipo", "ipx"}:
+        raise ValueError("solver must be simplex, hipo, or ipx")
+    if solver is not None:
+        highs.setOptionValue("solver", solver)
+        highs.setOptionValue("run_crossover", "on")
+    elif mode == "dual":
         highs.setOptionValue("solver", "simplex")
         highs.setOptionValue("simplex_strategy", 1)
     else:
@@ -49,7 +49,8 @@ def _set_highs_options(highs, highspy) -> dict[str, object]:
         highs.setOptionValue("threads", threads)
 
     return {
-        "simplexMode": mode,
+        "simplexMode": mode if solver is None else solver,
+        "highsSolver": solver or ("simplex" if mode == "dual" else "choose"),
         "parallel": parallel,
         "threads": int(threads_text) if threads_text else 0,
     }
@@ -65,6 +66,7 @@ def solve_highspy_streaming(
     n_p,
     *,
     flow_transpose=None,
+    solver: str | None = None,
 ) -> OptimizeResult:
     """Stream the augmented sequence-form LP into a direct HiGHS model."""
     try:
@@ -77,7 +79,7 @@ def solve_highspy_streaming(
     total_rows = E.shape[0] + F.shape[1]
     inf = highspy.kHighsInf
     highs = highspy.Highs()
-    highs_options = _set_highs_options(highs, highspy)
+    highs_options = _set_highs_options(highs, highspy, solver=solver)
 
     row_lower = np.concatenate([e, np.full(F.shape[1], -inf, dtype=float)])
     row_upper = np.concatenate([e, np.zeros(F.shape[1], dtype=float)])
@@ -202,7 +204,7 @@ def solve_highspy_streaming(
     simplex_iterations = int(getattr(info, "simplex_iteration_count", 0) or 0)
     ipm_iterations = int(getattr(info, "ipm_iteration_count", 0) or 0)
     result.nit = simplex_iterations + ipm_iterations
-    result.solver_backend = "highspy-streaming"
+    result.solver_backend = f"highspy-{solver or 'streaming'}"
     result.timings = {
         "assemblySeconds": streaming_started - started,
         "streamingSeconds": streaming_seconds,

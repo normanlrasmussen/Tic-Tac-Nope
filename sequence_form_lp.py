@@ -368,13 +368,14 @@ def _solve_scipy(E, e, F, f, payoff_self, n_x, n_p) -> OptimizeResult:
     return solve_scipy(E, e, F, f, payoff_self, n_x, n_p)
 
 
-def _solve_highspy_streaming(E, e, F, f, payoff_self, n_x, n_p, *, flow_transpose=None) -> OptimizeResult:
+def _solve_highspy_streaming(E, e, F, f, payoff_self, n_x, n_p, *, flow_transpose=None, solver=None) -> OptimizeResult:
     """Compatibility wrapper for the split streaming highspy backend."""
     from sequence_form_lp_highspy import solve_highspy_streaming
 
     return solve_highspy_streaming(
         E, e, F, f, payoff_self, n_x, n_p,
         flow_transpose=flow_transpose,
+        solver=solver,
     )
 
 
@@ -439,9 +440,13 @@ def solve_max_player(self_catalog: SequenceCatalog, opp_catalog: SequenceCatalog
 
 
 def solve_equilibrium(game: SequenceGame, backend: str = "auto") -> Tuple[np.ndarray, np.ndarray, float, float, OptimizeResult]:
-    if backend == "highspy-reduced":
+    reduced_backends = {
+        "highspy-reduced", "highspy-reduced-simplex", "highspy-reduced-hipo",
+        "highspy-reduced-ipx", "gurobi-reduced-barrier",
+    }
+    if backend in reduced_backends:
         from sequence_form_lp_reduced import solve_equilibrium_reduced
-        return solve_equilibrium_reduced(game, backend="highspy")
+        return solve_equilibrium_reduced(game, backend=backend)
     realization_o, _, result = solve_max_player(game.o, game.x, game.payoff, backend=backend)
     return realization_o, result.opponent_realization, result.lower_bound, result.upper_bound, result
 
@@ -485,8 +490,16 @@ def main() -> None:
     parser.add_argument("--start", choices=("O", "X"), default="O")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--enumerator", choices=("auto", "native", "python"), default="auto")
-    parser.add_argument("--lp-backend", choices=("auto", "highspy", "scipy", "highspy-reduced"), default="auto",
-                        help="auto prefers streaming highspy; highspy-reduced is an opt-in exact flow reduction")
+    parser.add_argument(
+        "--lp-backend",
+        choices=(
+            "auto", "highspy", "scipy", "highspy-reduced",
+            "highspy-reduced-simplex", "highspy-reduced-hipo",
+            "highspy-reduced-ipx", "gurobi-reduced-barrier",
+        ),
+        default="auto",
+        help="exact LP backend; reduced solver names select both the flow reduction and optimizer",
+    )
     parser.add_argument("--node-limit", type=int, default=0,
                         help="Safety cap during tree enumeration; 0 means no cap.")
     args = parser.parse_args()

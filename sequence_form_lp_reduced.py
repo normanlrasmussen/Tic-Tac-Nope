@@ -13,7 +13,7 @@ import time
 
 import numpy as np
 from scipy.optimize import OptimizeResult
-from scipy.sparse import coo_matrix, csr_matrix
+from scipy.sparse import coo_matrix, csr_matrix, hstack
 
 import sequence_form_lp as prod
 
@@ -195,17 +195,80 @@ def _dual_potentials_min(catalog, coefficients: np.ndarray) -> np.ndarray:
 def _solve_reduced_lp(E, e, F, f, payoff, backend: str):
     n_x = E.shape[1]
     n_p = F.shape[0]
-    if backend == "highspy":
+    if backend in {"highspy", "highspy-reduced-simplex", "highspy-reduced-hipo", "highspy-reduced-ipx"}:
+        solver = {
+            "highspy-reduced-simplex": "simplex",
+            "highspy-reduced-hipo": "hipo",
+            "highspy-reduced-ipx": "ipx",
+        }.get(backend)
         return prod._solve_highspy_streaming(
             E, e, F, f, payoff, n_x, n_p,
             flow_transpose=F.transpose().tocsc(copy=False),
+            solver=solver,
         )
+    if backend == "gurobi-reduced-barrier":
+        return _solve_gurobi_reduced_barrier(E, e, F, f, payoff, n_x, n_p)
     return prod._solve_scipy(E, e, F, f, payoff, n_x, n_p)
 
 
+def _solve_gurobi_reduced_barrier(E, e, F, f, payoff, n_x, n_p):
+    """Solve the reduced augmented LP with Gurobi's barrier method."""
+    try:
+        import gurobipy as gp
+    except ImportError as error:
+        raise ModuleNotFoundError(
+            "gurobi-reduced-barrier requires the optional gurobipy package"
+        ) from error
+
+    started = time.perf_counter()
+    model = gp.Model("tic_tac_nope_reduced")
+    model.Params.OutputFlag = 0
+    model.Params.Method = 2
+    model.Params.Crossover = 0
+    model.Params.FeasibilityTol = prod.FEASIBILITY_TOLERANCE
+    model.Params.OptimalityTol = prod.FEASIBILITY_TOLERANCE
+    model.Params.BarConvTol = prod.FEASIBILITY_TOLERANCE
+
+    lower = np.concatenate([np.zeros(n_x), np.full(n_p, -gp.GRB.INFINITY)])
+    variables = model.addMVar(n_x + n_p, lb=lower, name="augmented")
+    eq_matrix = hstack([E, csr_matrix((E.shape[0], n_p))], format="csr")
+    ub_matrix = hstack([-payoff.T, F.T], format="csr")
+    equalities = model.addMConstr(eq_matrix, variables, gp.GRB.EQUAL, e)
+    inequalities = model.addMConstr(
+        ub_matrix, variables, gp.GRB.LESS_EQUAL, np.zeros(F.shape[1])
+    )
+    objective = np.zeros(n_x + n_p)
+    objective[n_x:] = -f
+    model.setObjective(objective @ variables, gp.GRB.MINIMIZE)
+    model.optimize()
+    if model.Status != gp.GRB.OPTIMAL:
+        raise RuntimeError(f"Gurobi barrier failed with status {model.Status}")
+
+    result = OptimizeResult()
+    result.success = True
+    result.status = 0
+    result.message = "Gurobi optimal (barrier)"
+    result.x = np.asarray(variables.X, dtype=float)
+    result.fun = float(model.ObjVal)
+    result.eqlin = OptimizeResult(marginals=np.asarray(equalities.Pi, dtype=float))
+    result.ineqlin = OptimizeResult(marginals=np.asarray(inequalities.Pi, dtype=float))
+    result.nit = int(getattr(model, "BarIterCount", 0))
+    result.solver_backend = "gurobi-barrier"
+    result.timings = {
+        "backendTotalSeconds": time.perf_counter() - started,
+        "gurobiMethod": "barrier",
+        "gurobiCrossover": False,
+    }
+    return result
+
+
 def solve_equilibrium_reduced(game: prod.SequenceGame, backend: str = "highspy"):
-    if backend not in {"highspy", "auto", "scipy"}:
-        raise ValueError("Reduced LP backend must be highspy, auto, or scipy")
+    supported = {
+        "highspy", "auto", "scipy", "highspy-reduced-simplex",
+        "highspy-reduced-hipo", "highspy-reduced-ipx", "gurobi-reduced-barrier",
+    }
+    if backend not in supported:
+        raise ValueError(f"Reduced LP backend must be one of: {', '.join(sorted(supported))}")
     total_started = time.perf_counter()
     E, e = game.o.realization_matrix()
     F, f = game.x.realization_matrix()
