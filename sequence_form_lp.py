@@ -182,6 +182,7 @@ class SequenceCatalog:
         self.sequence_labels: List[str] = ["∅"]
         self.infos: Dict[str, InfoSet] = {}
         self._realization = None
+        self._realization_transpose = None
 
     def register(self, key: str, parent: int, actions: Tuple[int, ...]) -> InfoSet:
         existing = self.infos.get(key)
@@ -221,6 +222,19 @@ class SequenceCatalog:
         matrix = coo_matrix((data, (rows, cols)), shape=(self.n_constraints, self.n_sequences), dtype=float).tocsr()
         self._realization = matrix, rhs
         return self._realization
+
+    def realization_transpose(self):
+        """Return the cached CSC transpose used by direct column streaming.
+
+        The realization matrix remains the canonical CSR representation used by
+        certification.  SciPy's CSR transpose is a CSC view of the same sparse
+        structure in the normal case, so caching this view avoids repeatedly
+        transposing slices of the opponent flow matrix during highspy assembly.
+        """
+        if self._realization_transpose is None:
+            matrix, _ = self.realization_matrix()
+            self._realization_transpose = matrix.transpose().tocsc(copy=False)
+        return self._realization_transpose
 
 
 @dataclass
@@ -354,27 +368,40 @@ def _solve_scipy(E, e, F, f, payoff_self, n_x, n_p) -> OptimizeResult:
     return solve_scipy(E, e, F, f, payoff_self, n_x, n_p)
 
 
-def _solve_highspy_streaming(E, e, F, f, payoff_self, n_x, n_p) -> OptimizeResult:
+def _solve_highspy_streaming(E, e, F, f, payoff_self, n_x, n_p, *, flow_transpose=None) -> OptimizeResult:
     """Compatibility wrapper for the split streaming highspy backend."""
     from sequence_form_lp_highspy import solve_highspy_streaming
 
-    return solve_highspy_streaming(E, e, F, f, payoff_self, n_x, n_p)
+    return solve_highspy_streaming(
+        E, e, F, f, payoff_self, n_x, n_p,
+        flow_transpose=flow_transpose,
+    )
 
 
 def solve_max_player(self_catalog: SequenceCatalog, opp_catalog: SequenceCatalog, payoff_self: csr_matrix,
                      backend: str = "auto") -> Tuple[np.ndarray, float, OptimizeResult]:
     if backend not in ("auto", "highspy", "scipy"):
         raise ValueError("LP backend must be auto, highspy, or scipy")
+    total_started = time.perf_counter()
     stage = time.perf_counter()
     _log("Building realization-flow matrices E and F")
     E, e = self_catalog.realization_matrix(); F, f = opp_catalog.realization_matrix()
     _log(f"Flow matrices ready in {time.perf_counter()-stage:.2f}s: E={E.shape}, nnz={E.nnz:,}, {_matrix_mib(E):.1f} MiB; F={F.shape}, nnz={F.nnz:,}, {_matrix_mib(F):.1f} MiB")
+    flow_ready = time.perf_counter()
     _log(f"Payoff matrix: shape={payoff_self.shape} nnz={payoff_self.nnz:,} size={_matrix_mib(payoff_self):.1f} MiB")
     n_x, n_p = self_catalog.n_sequences, opp_catalog.n_constraints
 
     if backend in ("auto", "highspy"):
         try:
-            result = _solve_highspy_streaming(E, e, F, f, payoff_self, n_x, n_p)
+            # Do not materialize the cached transpose merely to discover that
+            # the optional direct backend is unavailable.  The transpose is
+            # created lazily only after the highspy import succeeds.
+            import highspy  # noqa: F401
+            flow_transpose = opp_catalog.realization_transpose()
+            result = _solve_highspy_streaming(
+                E, e, F, f, payoff_self, n_x, n_p,
+                flow_transpose=flow_transpose,
+            )
         except ModuleNotFoundError:
             if backend == "highspy":
                 raise
@@ -401,10 +428,20 @@ def solve_max_player(self_catalog: SequenceCatalog, opp_catalog: SequenceCatalog
     result.opponent_realization = opponent_realization
     result.lower_bound = float(f @ lower_potential)
     result.upper_bound = float(e @ upper_potential)
+    backend_timings = getattr(result, "timings", {})
+    result.timings = {
+        **backend_timings,
+        "flowMatrixSeconds": flow_ready - stage,
+        "certificateSeconds": time.perf_counter() - certify_started,
+        "lpTotalSeconds": time.perf_counter() - total_started,
+    }
     return realization, value, result
 
 
 def solve_equilibrium(game: SequenceGame, backend: str = "auto") -> Tuple[np.ndarray, np.ndarray, float, float, OptimizeResult]:
+    if backend == "highspy-reduced":
+        from sequence_form_lp_reduced import solve_equilibrium_reduced
+        return solve_equilibrium_reduced(game, backend="highspy")
     realization_o, _, result = solve_max_player(game.o, game.x, game.payoff, backend=backend)
     return realization_o, result.opponent_realization, result.lower_bound, result.upper_bound, result
 
@@ -448,8 +485,8 @@ def main() -> None:
     parser.add_argument("--start", choices=("O", "X"), default="O")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--enumerator", choices=("auto", "native", "python"), default="auto")
-    parser.add_argument("--lp-backend", choices=("auto", "highspy", "scipy"), default="auto",
-                        help="auto prefers streaming highspy and falls back to SciPy when highspy is unavailable")
+    parser.add_argument("--lp-backend", choices=("auto", "highspy", "scipy", "highspy-reduced"), default="auto",
+                        help="auto prefers streaming highspy; highspy-reduced is an opt-in exact flow reduction")
     parser.add_argument("--node-limit", type=int, default=0,
                         help="Safety cap during tree enumeration; 0 means no cap.")
     args = parser.parse_args()

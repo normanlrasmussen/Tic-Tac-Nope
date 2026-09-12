@@ -56,4 +56,13 @@ def solve_scipy(E, e, F, f, payoff_self, n_x, n_p) -> OptimizeResult:
     )
     _log(f"SciPy/HiGHS returned in {time.perf_counter() - solve_started:.2f}s")
     result.solver_backend = "scipy-highs-augmented"
+    result.timings = {
+        "assemblySeconds": solve_started - started,
+        "streamingSeconds": 0.0,
+        "solveSeconds": time.perf_counter() - solve_started,
+        "backendTotalSeconds": time.perf_counter() - started,
+        "chunkColumns": 0,
+        "payoffTransposeCached": False,
+        "simplexMode": "scipy-default",
+    }
     return result

@@ -254,6 +254,7 @@ class NativeSequenceCatalog:
         self.infos = _InfoMapping(self)
         self.sequence_labels = _SequenceLabels(self)
         self._realization = None
+        self._realization_transpose = None
         self._sequence_metadata = None
 
     @property
@@ -300,6 +301,13 @@ class NativeSequenceCatalog:
         matrix = csr_matrix((data, indices, indptr), shape=(n_info + 1, self.n_sequences), copy=False)
         self._realization = matrix, rhs
         return self._realization
+
+    def realization_transpose(self):
+        """Return the cached CSC transpose used by direct highspy streaming."""
+        if self._realization_transpose is None:
+            matrix, _ = self.realization_matrix()
+            self._realization_transpose = matrix.transpose().tocsc(copy=False)
+        return self._realization_transpose
 
     def best_response_value(self, coefficients, maximize=False):
         values = np.array(coefficients, dtype=np.float64, order="C", copy=True)

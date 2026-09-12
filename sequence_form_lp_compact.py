@@ -95,8 +95,8 @@ def main() -> None:
     parser.add_argument("--node-limit", type=int, default=0)
     parser.add_argument("--enumerator", choices=("auto", "python", "native"), default="auto",
                         help="Exact enumeration backend (auto selects the native accelerator when available).")
-    parser.add_argument("--lp-backend", choices=("auto", "highspy", "scipy"), default="auto",
-                        help="auto prefers the streaming highspy model and falls back to SciPy")
+    parser.add_argument("--lp-backend", choices=("auto", "highspy", "scipy", "highspy-reduced"), default="auto",
+                        help="auto prefers streaming highspy; highspy-reduced is an opt-in exact flow reduction")
     parser.add_argument("--policy-tol", type=float, default=0.0,
                         help="Deprecated compatibility option; positive policy support is always retained.")
     args = parser.parse_args()

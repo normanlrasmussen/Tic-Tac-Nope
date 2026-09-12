@@ -40,7 +40,7 @@ def _extract_lp_backend(argv: list[str]) -> tuple[str, list[str]]:
         argument = argv[index]
         if argument == "--lp-backend":
             if index + 1 >= len(argv):
-                raise SystemExit("--lp-backend requires one of: auto, highspy, scipy")
+                raise SystemExit("--lp-backend requires one of: auto, highspy, scipy, highspy-reduced")
             value = argv[index + 1]
             index += 2
         elif argument.startswith("--lp-backend="):
@@ -50,9 +50,9 @@ def _extract_lp_backend(argv: list[str]) -> tuple[str, list[str]]:
             cleaned.append(argument)
             index += 1
             continue
-        if value not in ("auto", "highspy", "scipy"):
+        if value not in ("auto", "highspy", "scipy", "highspy-reduced"):
             raise SystemExit(
-                f"invalid --lp-backend {value!r}; choose auto, highspy, or scipy"
+                f"invalid --lp-backend {value!r}; choose auto, highspy, scipy, or highspy-reduced"
             )
         backend = value
     return backend, cleaned
@@ -118,7 +118,9 @@ def artifact_matches_requested_lp_backend(artifact: dict) -> bool:
     if _lp_backend == "scipy":
         # Accept both the current name and legacy SciPy/linprog artifact labels.
         return "scipy" in solver
-    return solver.startswith("highspy")
+    if _lp_backend == "highspy-reduced":
+        return solver.startswith("highspy") and "reduced" in solver
+    return solver.startswith("highspy") and "reduced" not in solver
 
 
 def solve_exact_compact(mask: int, start: str, node_limit: int, force: bool) -> Path:
@@ -166,7 +168,7 @@ if __name__ == "__main__":
     _lp_backend, cleaned_argv = _extract_lp_backend(sys.argv)
     sys.argv[:] = cleaned_argv
     if "--help" in sys.argv or "-h" in sys.argv:
-        print("precompute.py exact-solver option: --lp-backend {auto,highspy,scipy}\n")
+        print("precompute.py exact-solver option: --lp-backend {auto,highspy,scipy,highspy-reduced}\n")
     elif _lp_backend != "auto":
         print(f"Exact LP backend forced to: {_lp_backend}", flush=True)
     batch.main()

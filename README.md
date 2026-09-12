@@ -252,3 +252,18 @@ python tests/smoke_all_lp_backends.py
 This exercises `scipy`, `highspy`, and `auto`, and prints each certified value
 interval, exploitability gap, selected solver, and runtime. Use `--seed` to
 choose a different reproducible pair of hidden-cell layouts.
+
+The direct highspy benchmark harness records LP assembly, streaming, solve,
+certificate, total-runtime, and fresh-process peak-memory timings:
+
+```bash
+python "lp solver tester/run_benchmarks.py" \
+  --backends highspy,auto \
+  --simplex-modes choose,dual \
+  --chunk-sizes 50000
+```
+
+The exact deterministic-flow reduction is opt-in with
+`--lp-backend highspy-reduced`. It contracts only one-action information-set
+flow equalities, lifts the result to the original sequence space, and runs the
+unchanged full-game certificate. It is not selected by `auto`.
