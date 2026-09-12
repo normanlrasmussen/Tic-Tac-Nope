@@ -12,7 +12,7 @@ That gives
 Q(I,a)=\frac{1}{|I|}\sum_{s\in I}V(T(s,a)).
 \]
 
-However, the Python `information_set_algo.py` is **not an exact solver for the full Tic-Tac-Nope game**. It is best described as a one-step information-set optimizer with a perfect-information continuation approximation.
+However, the retired Python information-set prototype was **not an exact solver for the full Tic-Tac-Nope game**. It was best described as a one-step information-set optimizer with a perfect-information continuation approximation.
 
 ## What is correct
 
@@ -58,7 +58,7 @@ The browser implementation now keeps hypothetical opponent-attempt sets alongsid
 
 ### Critical 4: Future continuation becomes perfect-information tic-tac-toe
 
-After the current action, `information_set_algo.py` evaluates each concrete board with `_perfect_information_minimax`.
+After the current action, the retired prototype evaluated each concrete board with `_perfect_information_minimax`.
 
 That means future players effectively know the true board and do not make decisions from their own information sets. This does **not** solve the full imperfect-information game.
 
