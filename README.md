@@ -272,3 +272,9 @@ Reduced optimizer choices are also available as explicit options:
 `highspy-reduced-simplex`, `highspy-reduced-hipo`,
 `highspy-reduced-ipx`, and `gurobi-reduced-barrier`. The first three require
 HiGHS through `highspy`; the last requires the optional `gurobipy` package.
+For a solve-time-oriented Gurobi selection, use `--lp-backend gurobi`; this
+uses Gurobi's automatic concurrent LP optimizer. Use
+`--lp-backend gurobi-reduced-barrier` when you specifically want barrier, or
+set `TTN_GUROBI_METHOD` to compare another Gurobi LP method. Crossover is
+enabled by default because the exact certificate requires an accurate primal
+and dual pair; `TTN_GUROBI_CROSSOVER=0` is only appropriate for experiments.

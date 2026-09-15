@@ -41,10 +41,17 @@ def compact_behavioral_policy(catalog: SequenceCatalog, realization: np.ndarray,
                               tol: float = 1e-10) -> Dict[str, Dict[str, float]]:
     if not np.isfinite(tol) or tol < 0:
         raise ValueError("Policy tolerance must be finite and nonnegative")
-    return compact_policy_and_realization(catalog, realization)[0]
+    return compact_policy_and_realization(catalog, realization, support_tol=tol)[0]
 
 
-def compact_policy_and_realization(catalog: SequenceCatalog, realization: np.ndarray) -> Tuple[Dict[str, Dict[str, float]], np.ndarray]:
+def compact_policy_and_realization(
+    catalog: SequenceCatalog,
+    realization: np.ndarray,
+    *,
+    support_tol: float = FEASIBILITY_TOLERANCE,
+) -> Tuple[Dict[str, Dict[str, float]], np.ndarray]:
+    if not np.isfinite(support_tol) or support_tol < 0:
+        raise ValueError("Support tolerance must be finite and nonnegative")
     realization = np.asarray(realization, dtype=float)
     if realization.shape != (catalog.n_sequences,):
         raise ValueError("Realization vector has the wrong shape")
@@ -67,9 +74,20 @@ def compact_policy_and_realization(catalog: SequenceCatalog, realization: np.nda
         weights = [max(0.0, float(realization[child])) for child in info.child_sequences]
         total = sum(weights)
         if not total > 0.0:
+            # Barrier/concurrent solutions can leave a reach of at most the
+            # certificate tolerance with every child at numerical zero.  A
+            # uniform behavioral completion preserves the realization-flow
+            # invariant for export without hiding a material solver failure.
+            if parent <= support_tol:
+                probability = 1.0 / len(info.actions)
+                probabilities = {str(action): probability for action in info.actions}
+                for child in info.child_sequences:
+                    reconstructed[child] = parent * probability
+                policy[key] = probabilities
+                continue
             raise RuntimeError(
                 "Exact policy export encountered a positive-reach information set "
-                f"with zero outgoing realization mass: {key}"
+                f"with zero outgoing realization mass: {key} (reach={parent:.3e})"
             )
         probabilities = {}
         for action, child, weight in zip(info.actions, info.child_sequences, weights):
@@ -95,8 +113,16 @@ def main() -> None:
     parser.add_argument("--node-limit", type=int, default=0)
     parser.add_argument("--enumerator", choices=("auto", "python", "native"), default="auto",
                         help="Exact enumeration backend (auto selects the native accelerator when available).")
-    parser.add_argument("--lp-backend", choices=("auto", "highspy", "scipy", "highspy-reduced"), default="auto",
-                        help="auto prefers streaming highspy; highspy-reduced is an opt-in exact flow reduction")
+    parser.add_argument(
+        "--lp-backend",
+        choices=(
+            "auto", "highspy", "scipy", "highspy-reduced",
+            "highspy-reduced-simplex", "highspy-reduced-hipo",
+            "highspy-reduced-ipx", "gurobi", "gurobi-reduced-barrier",
+        ),
+        default="auto",
+        help="exact LP backend; reduced solver names select both the flow reduction and optimizer",
+    )
     parser.add_argument("--policy-tol", type=float, default=0.0,
                         help="Deprecated compatibility option; positive policy support is always retained.")
     args = parser.parse_args()
@@ -158,7 +184,7 @@ def main() -> None:
             "Mystery-cell attempts reveal the actor's attempted location but not success/failure.",
             "Policy entries with zero parent realization are omitted because their behavioral completion does not affect the realization plan.",
             "Every positive behavioral probability is retained; only exactly zero own-reach information sets are omitted.",
-            "A positive-reach information set with zero outgoing realization mass is an export error; it is never completed with a fallback policy.",
+            "Near-zero reaches within the certificate tolerance receive a uniform behavioral completion when all solver child weights are numerically zero.",
             "Native enumeration aggregates terminal sequence-pair utilities without changing the game.",
             "When highspy is available, LP columns are streamed in bounded chunks to reduce peak memory.",
             "The certificate checks the realization plans reconstructed from the exported behavioral strategies.",

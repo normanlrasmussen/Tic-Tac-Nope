@@ -442,7 +442,7 @@ def solve_max_player(self_catalog: SequenceCatalog, opp_catalog: SequenceCatalog
 def solve_equilibrium(game: SequenceGame, backend: str = "auto") -> Tuple[np.ndarray, np.ndarray, float, float, OptimizeResult]:
     reduced_backends = {
         "highspy-reduced", "highspy-reduced-simplex", "highspy-reduced-hipo",
-        "highspy-reduced-ipx", "gurobi-reduced-barrier",
+        "highspy-reduced-ipx", "gurobi", "gurobi-reduced-barrier",
     }
     if backend in reduced_backends:
         from sequence_form_lp_reduced import solve_equilibrium_reduced
@@ -495,7 +495,7 @@ def main() -> None:
         choices=(
             "auto", "highspy", "scipy", "highspy-reduced",
             "highspy-reduced-simplex", "highspy-reduced-hipo",
-            "highspy-reduced-ipx", "gurobi-reduced-barrier",
+            "highspy-reduced-ipx", "gurobi", "gurobi-reduced-barrier",
         ),
         default="auto",
         help="exact LP backend; reduced solver names select both the flow reduction and optimizer",

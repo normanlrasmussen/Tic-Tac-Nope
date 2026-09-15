@@ -9,6 +9,7 @@ dual potentials, and runs the unchanged full-game certificate.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 import time
 
 import numpy as np
@@ -206,13 +207,19 @@ def _solve_reduced_lp(E, e, F, f, payoff, backend: str):
             flow_transpose=F.transpose().tocsc(copy=False),
             solver=solver,
         )
+    if backend == "gurobi":
+        # Let Gurobi run its concurrent LP optimizer.  This is the production
+        # solve-time choice; it can race dual simplex, primal simplex, and
+        # barrier, which is appropriate here because memory is not the limit.
+        return _solve_gurobi_reduced(E, e, F, f, payoff, n_x, n_p, method=-1)
     if backend == "gurobi-reduced-barrier":
-        return _solve_gurobi_reduced_barrier(E, e, F, f, payoff, n_x, n_p)
+        # Retain an explicit barrier mode for controlled comparisons/tuning.
+        return _solve_gurobi_reduced(E, e, F, f, payoff, n_x, n_p, method=2)
     return prod._solve_scipy(E, e, F, f, payoff, n_x, n_p)
 
 
-def _solve_gurobi_reduced_barrier(E, e, F, f, payoff, n_x, n_p):
-    """Solve the reduced augmented LP with Gurobi's barrier method."""
+def _solve_gurobi_reduced(E, e, F, f, payoff, n_x, n_p, *, method: int = -1):
+    """Solve the reduced augmented LP with Gurobi's selected LP method."""
     try:
         import gurobipy as gp
     except ImportError as error:
@@ -223,8 +230,21 @@ def _solve_gurobi_reduced_barrier(E, e, F, f, payoff, n_x, n_p):
     started = time.perf_counter()
     model = gp.Model("tic_tac_nope_reduced")
     model.Params.OutputFlag = 0
-    model.Params.Method = 2
-    model.Params.Crossover = 0
+    # Method=-1 is Gurobi's automatic LP choice (currently concurrent).  It
+    # is intentionally the default here: this LP is solve-time bound, not
+    # memory bound.  TTN_GUROBI_METHOD can override it for a benchmark run.
+    configured_method = int(os.environ.get("TTN_GUROBI_METHOD", method))
+    if configured_method not in (-1, 0, 1, 2, 3, 4, 5, 6):
+        raise ValueError("TTN_GUROBI_METHOD must be a valid Gurobi Method value")
+    model.Params.Method = configured_method
+    # Crossover is required for this highly degenerate sequence-form LP to
+    # return a sufficiently accurate primal/dual pair.  With crossover=0,
+    # Gurobi can return an interior barrier point whose gap is much larger
+    # than the exact-game certificate tolerance.
+    crossover = int(os.environ.get("TTN_GUROBI_CROSSOVER", "1"))
+    if crossover not in (-1, 0, 1, 2, 3, 4):
+        raise ValueError("TTN_GUROBI_CROSSOVER must be -1 or an integer from 0 to 4")
+    model.Params.Crossover = crossover
     model.Params.FeasibilityTol = prod.FEASIBILITY_TOLERANCE
     model.Params.OptimalityTol = prod.FEASIBILITY_TOLERANCE
     model.Params.BarConvTol = prod.FEASIBILITY_TOLERANCE
@@ -240,24 +260,29 @@ def _solve_gurobi_reduced_barrier(E, e, F, f, payoff, n_x, n_p):
     objective = np.zeros(n_x + n_p)
     objective[n_x:] = -f
     model.setObjective(objective @ variables, gp.GRB.MINIMIZE)
+    model_build_seconds = time.perf_counter() - started
+    optimize_started = time.perf_counter()
     model.optimize()
+    optimize_seconds = time.perf_counter() - optimize_started
     if model.Status != gp.GRB.OPTIMAL:
-        raise RuntimeError(f"Gurobi barrier failed with status {model.Status}")
+        raise RuntimeError(f"Gurobi LP failed with status {model.Status}")
 
     result = OptimizeResult()
     result.success = True
     result.status = 0
-    result.message = "Gurobi optimal (barrier)"
+    result.message = f"Gurobi optimal (Method={configured_method})"
     result.x = np.asarray(variables.X, dtype=float)
     result.fun = float(model.ObjVal)
     result.eqlin = OptimizeResult(marginals=np.asarray(equalities.Pi, dtype=float))
     result.ineqlin = OptimizeResult(marginals=np.asarray(inequalities.Pi, dtype=float))
     result.nit = int(getattr(model, "BarIterCount", 0))
-    result.solver_backend = "gurobi-barrier"
+    result.solver_backend = f"gurobi-method-{configured_method}"
     result.timings = {
         "backendTotalSeconds": time.perf_counter() - started,
-        "gurobiMethod": "barrier",
-        "gurobiCrossover": False,
+        "modelBuildSeconds": model_build_seconds,
+        "optimizeSeconds": optimize_seconds,
+        "gurobiMethod": configured_method,
+        "gurobiCrossover": crossover,
     }
     return result
 
@@ -266,6 +291,7 @@ def solve_equilibrium_reduced(game: prod.SequenceGame, backend: str = "highspy")
     supported = {
         "highspy", "auto", "scipy", "highspy-reduced-simplex",
         "highspy-reduced-hipo", "highspy-reduced-ipx", "gurobi-reduced-barrier",
+        "gurobi",
     }
     if backend not in supported:
         raise ValueError(f"Reduced LP backend must be one of: {', '.join(sorted(supported))}")

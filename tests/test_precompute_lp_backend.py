@@ -47,7 +47,7 @@ def test_extract_lp_backend_equals_form():
 def test_extract_lp_backend_accepts_reduced_solver_choices():
     choices = (
         "highspy-reduced-simplex", "highspy-reduced-hipo",
-        "highspy-reduced-ipx", "gurobi-reduced-barrier",
+        "highspy-reduced-ipx", "gurobi", "gurobi-reduced-barrier",
     )
     for choice in choices:
         backend, argv = precompute._extract_lp_backend(
