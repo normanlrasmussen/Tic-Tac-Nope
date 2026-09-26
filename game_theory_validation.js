@@ -171,10 +171,86 @@ function strategyPairSmokeAudit() {
   }
 }
 
+
+function variantStructuralAudit() {
+  const variants = Object.keys(T.VARIANTS);
+  const rng = seeded(20260926);
+  for (const variant of variants) {
+    const rules = T.makeRules([1, 3], O, variant);
+    const seen = new Map();
+    for (let episode = 0; episode < 1000; episode++) {
+      let state = T.makeRoot(rules);
+      while (!T.terminal(state, rules).done) {
+        const key = T.informationKey(state, rules, state.turn);
+        const signature = T.legalActions(state, rules).join(',');
+        if (seen.has(key)) assert(seen.get(key) === signature, `${variant}: information-set legality mismatch`);
+        else seen.set(key, signature);
+        const actions = T.legalActions(state, rules);
+        assert(actions.length > 0, `${variant}: nonterminal state had no legal actions`);
+        state = T.applyAction(state, rules, actions[Math.floor(rng() * actions.length)]);
+        assert(state && state.moveNo <= 18, `${variant}: finite-horizon bound violated`);
+      }
+      assert(T.utility(state, O, rules) === -T.utility(state, X, rules), `${variant}: zero-sum utility violated`);
+    }
+  }
+}
+
+function variantBeliefAudit() {
+  const rng = seeded(20260927);
+  for (const variant of Object.keys(T.VARIANTS)) {
+    const rules = T.makeRules([1, 3], O, variant);
+    for (let episode = 0; episode < 100; episode++) {
+      let state = T.makeRoot(rules);
+      const beliefs = new T.BeliefTracker(rules);
+      while (!T.terminal(state, rules).done) {
+        const player = state.turn;
+        const worlds = beliefs.for(player);
+        assert(worlds.length > 0, `${variant}: acting player has empty belief set`);
+        const signature = T.legalActions(state, rules, player).join(',');
+        for (const world of worlds) {
+          assert(T.legalActions(world, rules, player).join(',') === signature, `${variant}: belief legality mismatch`);
+        }
+        const actions = T.legalActions(state, rules);
+        const before = state;
+        state = T.applyAction(state, rules, actions[Math.floor(rng() * actions.length)]);
+        beliefs.advance(before, state);
+      }
+    }
+  }
+}
+
+function variantSolverAudit() {
+  for (const variant of Object.keys(T.VARIANTS)) {
+    const rules = T.makeRules([1, 3], O, variant);
+    const solver = new T.OutcomeSamplingMCCFR(rules, 9917).train(3000);
+    const policy = solver.policy(T.makeRoot(rules));
+    assert(Math.abs(policy.reduce((sum, item) => sum + item.prob, 0) - 1) < 1e-10, `${variant}: MCCFR policy not normalized`);
+    assert(policy.every((item) => item.prob >= 0 && Number.isFinite(item.prob)), `${variant}: MCCFR policy contains invalid probabilities`);
+  }
+}
+
+function seedIsolationAudit() {
+  const baseSeed = 424242;
+  const configs = [
+    T.makeRules([1, 3], O, 'standard'),
+    T.makeRules([1, 3], X, 'standard'),
+    T.makeRules([0, 2], O, 'standard'),
+    T.makeRules([1, 3], O, 'no-hidden-opening'),
+    T.makeRules([1, 3], O, 'no-center-ring'),
+    T.makeRules([1, 3], O, 'no-center-ring-pair-loss')
+  ];
+  const draws = configs.map((rules) => new T.OutcomeSamplingMCCFR(rules, baseSeed).rng.next());
+  assert(new Set(draws).size === draws.length, 'MCCFR configuration salting produced duplicate initial RNG streams');
+}
+
 hiddenInformationAudit();
 structuralAudit();
 beliefAudit();
 solverAudit();
+variantStructuralAudit();
+variantBeliefAudit();
+variantSolverAudit();
+seedIsolationAudit();
 evaluationAudit();
 replayAudit();
 strategyPairSmokeAudit();
