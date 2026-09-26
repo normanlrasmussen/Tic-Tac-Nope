@@ -11,16 +11,24 @@
   const RING_PAIRS = RING.map((_, i) => bit(RING[i]) | bit(RING[(i + 1) % RING.length]));
   const INFORMATION_MODEL = 'hidden-attempt-location-no-result-v2';
   const VARIANTS = Object.freeze({
-    standard: Object.freeze({ variantId: 'standard', name: 'Hidden Tiles', playableMask: FULL_MASK, allowHiddenOpening: true, objective: 'three-in-row', winningPatterns: WIN_MASKS, losingPatterns: [] }),
-    'no-hidden-opening': Object.freeze({ variantId: 'no-hidden-opening', name: 'No Hidden Opening Move', playableMask: FULL_MASK, allowHiddenOpening: false, objective: 'three-in-row', winningPatterns: WIN_MASKS, losingPatterns: [] }),
-    'no-center-ring': Object.freeze({ variantId: 'no-center-ring', name: 'No Center', playableMask: FULL_MASK ^ bit(4), allowHiddenOpening: true, objective: 'three-in-ring', winningPatterns: RING_TRIPLES, losingPatterns: [] }),
-    'no-center-ring-pair-loss': Object.freeze({ variantId: 'no-center-ring-pair-loss', name: 'No Center · Pairs Lose', playableMask: FULL_MASK ^ bit(4), allowHiddenOpening: true, objective: 'adjacent-pair-loss', winningPatterns: [], losingPatterns: RING_PAIRS })
+    standard: Object.freeze({ variantId: 'standard', rulesVersion: 1, name: 'Hidden Tiles', playableMask: FULL_MASK, allowHiddenOpening: true, objective: 'three-in-row', winningPatterns: WIN_MASKS, losingPatterns: [] }),
+    'no-hidden-opening': Object.freeze({ variantId: 'no-hidden-opening', rulesVersion: 1, name: 'No Hidden Opening Move', playableMask: FULL_MASK, allowHiddenOpening: false, objective: 'three-in-row', winningPatterns: WIN_MASKS, losingPatterns: [] }),
+    'no-center-ring': Object.freeze({ variantId: 'no-center-ring', rulesVersion: 1, name: 'No Center', playableMask: FULL_MASK ^ bit(4), allowHiddenOpening: true, objective: 'three-in-ring', winningPatterns: RING_TRIPLES, losingPatterns: [] }),
+    'no-center-ring-pair-loss': Object.freeze({ variantId: 'no-center-ring-pair-loss', rulesVersion: 1, name: 'No Center · Pairs Lose', playableMask: FULL_MASK ^ bit(4), allowHiddenOpening: true, objective: 'adjacent-pair-loss', winningPatterns: [], losingPatterns: RING_PAIRS })
   });
 
   function other(player) { return player === O ? X : O; }
   function symbol(player) { return player === O ? 'O' : player === X ? 'X' : ''; }
   function bit(move) { return 1 << move; }
   function popcount(n) { let c = 0; while (n) { n &= n - 1; c++; } return c; }
+  function stableHash32(text) {
+    let hash = 2166136261 >>> 0;
+    for (let i = 0; i < text.length; i++) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 16777619) >>> 0;
+    }
+    return hash >>> 0;
+  }
   function maskToMoves(mask) { const out = []; for (let i = 0; i < 9; i++) if (mask & bit(i)) out.push(i); return out; }
   function movesToMask(moves) { return moves.reduce((m, x) => m | bit(x), 0); }
   function hasWin(mask) { return WIN_MASKS.some((w) => (mask & w) === w); }
@@ -242,10 +250,14 @@
 
   class OutcomeSamplingMCCFR {
     constructor(rules, seed = 20260903, exploration = 0.6) {
+      if (!Number.isFinite(exploration) || exploration < 0 || exploration > 1) {
+        throw new Error('MCCFR exploration must be a finite probability in [0,1].');
+      }
       this.rules = rules;
       this.nodes = new Map();
       this.iterations = 0;
-      this.rng = new RNG(seed ^ rules.hiddenMask ^ (rules.startPlayer << 12));
+      const configurationSalt = stableHash32(`${rules.variantId}|${rules.hiddenMask}|${rules.startPlayer}`);
+      this.rng = new RNG((seed >>> 0) ^ configurationSalt);
       this.exploration = exploration;
       this.episodes = 0;
     }
