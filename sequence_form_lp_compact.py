@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compact exact sequence-form LP exporter for batch website precomputation."""
+"""Compact exact sequence-form LP exporter with explicit zero-reach behavioral completion."""
 from __future__ import annotations
 
 import argparse
@@ -174,6 +174,7 @@ def main() -> None:
         "dualityGap": gap,
         "numericallySolved": bool(result.success),
         "policyTolerance": 0.0,
+        "behavioralCompletion": {"zeroParent": "uniform"},
         "certificate": certificate,
         "counts": {
             "histories": game.histories, "terminals": game.terminals,
@@ -186,8 +187,8 @@ def main() -> None:
         "notes": [
             "Complete unabstracted sequence-form LP; both players are recovered from its primal-dual solution.",
             "Mystery-cell attempts reveal the actor's attempted location but not success/failure.",
-            "Policy entries with zero parent realization are omitted because their behavioral completion does not affect the realization plan.",
-            "Every positive behavioral probability is retained; only exactly zero own-reach information sets are omitted.",
+            "Policy entries with zero parent realization are omitted from JSON and are defined to use a uniform behavioral completion.",
+            "Every positive behavioral probability is retained; the explicit zero-parent completion makes the sparse table a complete behavioral strategy.",
             "Near-zero reaches within the certificate tolerance receive a uniform behavioral completion when all solver child weights are numerically zero.",
             "Native enumeration aggregates terminal sequence-pair utilities without changing the game.",
             "When highspy is available, LP columns are streamed in bounded chunks to reduce peak memory.",
