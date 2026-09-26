@@ -28,6 +28,9 @@ if (!['O', 'X'].includes(startText)) throw new Error('--start must be O or X');
 const iterations = Math.max(1, Number.parseInt(arg('iterations', '1000000'), 10));
 const seed = Number.parseInt(arg('seed', '20260903'), 10) >>> 0;
 const exploration = Number.parseFloat(arg('exploration', '0.6'));
+if (!Number.isFinite(exploration) || exploration < 0 || exploration > 1) {
+  throw new Error('--exploration must be a finite probability in [0,1]');
+}
 const output = arg('output');
 if (!output) throw new Error('--output is required');
 
@@ -60,7 +63,7 @@ const artifact = {
   game: 'Tic-Tac-Nope',
   informationModel: T.INFORMATION_MODEL,
   variant,
-  rulesVersion: 1,
+  rulesVersion: rules.rulesVersion,
   hidden,
   hiddenMask: rules.hiddenMask,
   startPlayer: startText,
@@ -74,6 +77,7 @@ const artifact = {
     'This is the time-averaged behavioral policy produced by the same OutcomeSamplingMCCFR implementation used by the website.',
     'Mystery-cell attempts reveal the actor\'s attempted location but not success/failure.',
     'Finite MCCFR training is approximate; it is not an exact Nash certificate.',
+    'The stored seed is a base seed; the solver salts it once with variant, hidden mask, and starting player.',
     'Information sets not visited during sampling are omitted and should use a documented fallback if queried.'
   ]
 };
