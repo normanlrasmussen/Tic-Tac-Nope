@@ -12,9 +12,9 @@ class, for both possible starting players. It stores:
 Default scope: every valid mystery-cell set of size >= 2 for the selected
 variant and topology, with both starting players.
 
-The run is resumable. Exact artifacts are reused only when they declare the
-current information model; stale artifacts from older game semantics are never
-published in the exact-policy manifest.
+The run is resumable. Cached artifacts are reused only when their information
+model, variant, rules version, board configuration, and solver parameters match
+the requested game. Stale artifacts are never published in the manifest.
 """
 
 from __future__ import annotations
@@ -35,7 +35,65 @@ WEB_EQ = ROOT / "web" / "equilibria"
 EXACT_DIR = WEB_EQ / "exact"  # legacy wrapper/test compatibility for standard artifacts
 MCCFR_DIR = WEB_EQ / "mccfr"
 INFORMATION_MODEL = "hidden-attempt-location-no-result-v2"
+CERTIFICATE_TOLERANCE = 1e-7
+MCCFR_EXPLORATION = 0.6
+LEGACY_STANDARD_RULES_VERSION = 1
 _metadata_cache: Dict[Path, tuple] = {}
+
+
+def artifact_rules_version(data: dict) -> int | None:
+    value = data.get("rulesVersion")
+    if value is None and data.get("variant", "standard") == "standard":
+        return LEGACY_STANDARD_RULES_VERSION
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def exact_artifact_matches_configuration(data: dict, mask: int, start: str, variant: str) -> bool:
+    spec = variant_spec(variant)
+    try:
+        gap = float(data.get("dualityGap"))
+        hidden_mask = int(data.get("hiddenMask"))
+    except (TypeError, ValueError):
+        return False
+    return (
+        data.get("schema") in (1, 2)
+        and data.get("numericallySolved") is True
+        and data.get("informationModel") == INFORMATION_MODEL
+        and data.get("variant", "standard") == variant
+        and artifact_rules_version(data) == spec.rules_version
+        and hidden_mask == int(mask)
+        and data.get("startPlayer") == start
+        and -CERTIFICATE_TOLERANCE <= gap <= CERTIFICATE_TOLERANCE
+    )
+
+
+def mccfr_artifact_matches_configuration(
+    data: dict, mask: int, start: str, variant: str, iterations: int, seed: int,
+    exploration: float = MCCFR_EXPLORATION,
+) -> bool:
+    spec = variant_spec(variant)
+    try:
+        hidden_mask = int(data.get("hiddenMask"))
+        stored_iterations = int(data.get("iterations"))
+        stored_seed = int(data.get("seed"))
+        stored_exploration = float(data.get("exploration"))
+    except (TypeError, ValueError):
+        return False
+    return (
+        data.get("schema") == 1
+        and data.get("solver") == "OutcomeSamplingMCCFR"
+        and data.get("informationModel") == INFORMATION_MODEL
+        and data.get("variant", "standard") == variant
+        and artifact_rules_version(data) == spec.rules_version
+        and hidden_mask == int(mask)
+        and data.get("startPlayer") == start
+        and stored_iterations >= int(iterations)
+        and stored_seed == (int(seed) & 0xFFFFFFFF)
+        and abs(stored_exploration - float(exploration)) <= 1e-15
+    )
 
 
 # A transform maps an OLD board index -> transformed board index.
@@ -158,10 +216,10 @@ def solve_exact(mask: int, start: str, variant: str, node_limit: int, force: boo
             existing = json.loads(out.read_text(encoding="utf-8"))
         except (OSError, ValueError, TypeError):
             existing = None
-        if isinstance(existing, dict) and existing.get("informationModel") == INFORMATION_MODEL:
+        if isinstance(existing, dict) and exact_artifact_matches_configuration(existing, mask, start, variant):
             print(f"SKIP exact  mask={mask:03d} start={start}  ({out.name} is current)")
             return out
-        print(f"STALE exact mask={mask:03d} start={start}  ({out.name} uses an older information model)")
+        print(f"STALE exact mask={mask:03d} start={start}  ({out.name} does not match the current game configuration)")
     cells = ",".join(map(str, mask_cells(mask)))
     command = [
         sys.executable,
@@ -182,9 +240,8 @@ def solve_mccfr(mask: int, start: str, variant: str, iterations: int, seed: int,
     if out.exists() and not force:
         try:
             existing = json.loads(out.read_text(encoding="utf-8"))
-            if (
-                existing.get("informationModel") == INFORMATION_MODEL
-                and int(existing.get("iterations", 0)) >= iterations
+            if mccfr_artifact_matches_configuration(
+                existing, mask, start, variant, iterations, seed, MCCFR_EXPLORATION
             ):
                 print(
                     f"SKIP mccfr  mask={mask:03d} start={start}  "
@@ -203,6 +260,7 @@ def solve_mccfr(mask: int, start: str, variant: str, iterations: int, seed: int,
         "--variant", variant,
         "--iterations", str(iterations),
         "--seed", str(seed),
+        "--exploration", str(MCCFR_EXPLORATION),
         "--output", str(out),
     ]
     run_command(command)
@@ -220,11 +278,15 @@ def artifact_metadata(path: Path) -> dict:
     data = json.loads(path.read_text(encoding="utf-8"))
     result = {
         "file": path.relative_to(WEB_EQ).as_posix(),
+        "schema": data.get("schema"),
+        "solver": data.get("solver"),
         "informationModel": data.get("informationModel"),
         "variant": data.get("variant", "standard"),
+        "rulesVersion": artifact_rules_version(data),
         "hiddenMask": data["hiddenMask"],
         "hidden": data["hidden"],
         "startPlayer": data["startPlayer"],
+        "numericallySolved": data.get("numericallySolved"),
     }
     if "valueO" in data:
         result.update(
@@ -247,8 +309,23 @@ def rebuild_manifest(mode: str, variant: str) -> None:
     root = WEB_EQ / variant
     exact_all = [artifact_metadata(p) for p in sorted((root / "exact").glob("mask-*-?.json"))]
     mccfr_all = [artifact_metadata(p) for p in sorted((root / "mccfr").glob("mask-*-?.json"))]
-    exact = [item for item in exact_all if item.get("informationModel") == INFORMATION_MODEL]
-    mccfr = [item for item in mccfr_all if item.get("informationModel") == INFORMATION_MODEL]
+    spec = variant_spec(variant)
+    exact = [
+        item for item in exact_all
+        if exact_artifact_matches_configuration(
+            item, int(item.get("hiddenMask", -1)), str(item.get("startPlayer", "")), variant
+        )
+    ]
+    mccfr = [
+        item for item in mccfr_all
+        if (
+            item.get("schema") == 1
+            and item.get("solver") == "OutcomeSamplingMCCFR"
+            and item.get("informationModel") == INFORMATION_MODEL
+            and item.get("variant", "standard") == variant
+            and item.get("rulesVersion") == spec.rules_version
+        )
+    ]
     payload = {
         "schema": 3,
         "mode": mode,
@@ -339,8 +416,9 @@ def main() -> None:
                 solve_exact(mask, start, args.variant, args.node_limit, args.force)
                 rebuild_manifest(args.mode, args.variant)
             if args.solvers in ("both", "mccfr"):
-                # Deterministic but distinct seed per configuration.
-                config_seed = (args.seed ^ mask ^ (2 if start == "O" else 1) << 12) & 0xFFFFFFFF
+                # Pass one base seed. OutcomeSamplingMCCFR salts it exactly once
+                # with variant, hidden mask, and starting player.
+                config_seed = args.seed & 0xFFFFFFFF
                 solve_mccfr(mask, start, args.variant, args.mccfr_iterations, config_seed, args.force)
                 rebuild_manifest(args.mode, args.variant)
         except subprocess.CalledProcessError as error:
