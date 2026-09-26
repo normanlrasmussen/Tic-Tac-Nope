@@ -12,14 +12,15 @@
   let hidden = new Set([1, 3]);
   let startPlayer = O;
   let selectedStrategy = ALL_ID;
-  let rules = T.makeRules([...hidden], startPlayer);
+  function activeVariant() { return global.TTNActiveVariant || 'standard'; }
+  let rules = T.makeRules([...hidden], startPlayer, activeVariant());
   let state = T.makeRoot(rules);
   let tracker = new T.BeliefTracker(rules);
   const solverCache = new Map();
 
   function symbol(player) { return T.symbol(player) || (player === O ? 'O' : player === X ? 'X' : ''); }
   function isHidden(move) { return Boolean(rules.hiddenMask & T.bit(move)); }
-  function rulesKey(r = rules) { return `${r.hiddenMask}|${r.startPlayer}`; }
+  function rulesKey(r = rules) { return `${r.variantId}|${r.hiddenMask}|${r.startPlayer}`; }
   function solverFor(r = rules) {
     const key = rulesKey(r);
     if (!solverCache.has(key)) solverCache.set(key, new T.OutcomeSamplingMCCFR(r, 20260911));
@@ -147,10 +148,13 @@
     for (let move = 0; move < 9; move++) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = `picker-cell${hidden.has(move) ? ' selected' : ''}`;
+      const playable = Boolean(T.VARIANTS[activeVariant()].playableMask & T.bit(move));
+      button.className = `picker-cell${hidden.has(move) ? ' selected' : ''}${playable ? '' : ' unavailable'}`;
+      button.disabled = !playable;
       button.textContent = String(move + 1);
       button.setAttribute('aria-pressed', hidden.has(move) ? 'true' : 'false');
       button.addEventListener('click', () => {
+        if (button.disabled) return;
         if (hidden.has(move) && hidden.size <= 2) {
           $('playground-message').textContent = 'Keep at least two mystery cells.';
           return;
@@ -326,7 +330,16 @@
   }
 
   function reset() {
-    rules = T.makeRules([...hidden], startPlayer);
+    const spec = T.VARIANTS[activeVariant()];
+    for (const move of [...hidden]) if (!(spec.playableMask & T.bit(move))) hidden.delete(move);
+    while (hidden.size < 2) {
+      const candidate = Array.from({ length: 9 }, (_, move) => move)
+        .find((move) => (spec.playableMask & T.bit(move)) && !hidden.has(move));
+      if (candidate === undefined) break;
+      hidden.add(candidate);
+    }
+    if (!spec.allowHiddenOpening && hidden.size === T.popcount(spec.playableMask)) hidden.delete([...hidden][hidden.size - 1]);
+    rules = T.makeRules([...hidden], startPlayer, activeVariant());
     state = T.makeRoot(rules);
     tracker = new T.BeliefTracker(rules);
     $('playground-message').textContent = `Playground reset. ${symbol(startPlayer)} moves first.`;
@@ -387,6 +400,11 @@
     global.addEventListener('ttn-lp-artifacts-loaded', () => {
       populateStrategySelect();
       renderRecommendations();
+    });
+    document.addEventListener('ttn-variant-changed', () => {
+      solverCache.clear();
+      reset();
+      renderPicker();
     });
   }
 

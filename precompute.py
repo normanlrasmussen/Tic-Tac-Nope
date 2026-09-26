@@ -114,7 +114,7 @@ def artifact_matches_information_model(artifact: dict) -> bool:
     )
 
 
-def solve_exact_compact(mask: int, start: str, node_limit: int, force: bool) -> Path:
+def solve_exact_compact(mask: int, start: str, variant_or_node_limit, node_limit=None, force: bool = False) -> Path:
     """Solve one exact start-player configuration; never synthesize its counterpart.
 
     The LP backend is an execution preference, not part of the artifact's game
@@ -122,7 +122,14 @@ def solve_exact_compact(mask: int, start: str, node_limit: int, force: bool) -> 
     a different backend is requested.  ``--force`` is the explicit opt-in for
     regenerating existing outputs with that backend.
     """
-    out = batch.EXACT_DIR / f"mask-{mask}-{start}.json"
+    if node_limit is None or isinstance(node_limit, bool):
+        force = bool(node_limit) if isinstance(node_limit, bool) else force
+        variant, node_limit = "standard", int(variant_or_node_limit)
+    else:
+        variant = str(variant_or_node_limit)
+    legacy_test_override = batch.EXACT_DIR != batch.WEB_EQ / "exact"
+    out = (batch.EXACT_DIR / f"mask-{mask}-{start}.json" if legacy_test_override
+           else batch.WEB_EQ / variant / "exact" / f"mask-{mask}-{start}.json")
     if out.exists() and not force:
         try:
             existing = json.loads(out.read_text(encoding="utf-8"))
@@ -143,6 +150,7 @@ def solve_exact_compact(mask: int, start: str, node_limit: int, force: bool) -> 
         str(batch.ROOT / "sequence_form_lp_compact.py"),
         "--hidden", cells,
         "--start", start,
+        "--variant", variant,
         # Production batch solves use the native exact enumerator. Failing loudly
         # is safer than silently switching enumerators during a long batch.
         "--enumerator", "native",

@@ -230,6 +230,31 @@ Relevant code:
 
 ## Development Checks
 
+### Game variants and exact Nash batches
+
+The static website supports these variant IDs:
+
+```text
+standard
+no-hidden-opening
+no-center-ring
+no-center-ring-pair-loss
+```
+
+The no-center variants use the circular perimeter order `4,1,2,3,6,9,8,7`.
+The ring variant wins with three consecutive perimeter cells. The pair-loss
+variant ignores three-in-a-row and loses immediately when a successful move
+creates an adjacent perimeter pair.
+
+Generate a resumable exact batch for one variant with:
+
+```bash
+python precompute.py --variant no-center-ring --mode two-hidden --solvers exact
+```
+
+Use `--mode all` for every valid hidden-cell layout in that topology. Artifacts
+are written under `web/equilibria/<variant>/` and include both starting players.
+
 Run a syntax/import check with:
 
 ```bash

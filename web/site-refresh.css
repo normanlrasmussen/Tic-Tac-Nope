@@ -128,3 +128,10 @@ footer{display:flex;justify-content:space-between;gap:20px;margin-top:34px;paddi
   .home-actions{display:grid}.home-actions>*{width:100%}.section-heading{align-items:flex-start;flex-direction:column}.panel{padding:17px}.nash-value-grid{grid-template-columns:1fr!important}.research-tabs{width:100%}.research-tabs button{flex:1}.sync-picker{grid-template-columns:repeat(3,1fr)}
 }
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+/* Multi-variant game navigation and unavailable no-center cells. */
+.variant-nav{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-left:auto}
+.variant-btn{border:1px solid var(--line,#d8d1c4);border-radius:999px;padding:7px 10px;background:transparent;color:inherit;font:inherit;font-size:.72rem;cursor:pointer;white-space:nowrap}
+.variant-btn.active{background:var(--ink,#171717);color:var(--bg,#fff)}
+.cell.unavailable,.picker-cell.unavailable{background:repeating-linear-gradient(135deg,rgba(0,0,0,.08) 0 5px,transparent 5px 10px);color:var(--muted,#777);opacity:.55;cursor:not-allowed}
+.cell.unavailable{pointer-events:none}
+@media(max-width:1100px){.variant-nav{width:100%;margin:8px 0 0}.topbar{flex-wrap:wrap}}

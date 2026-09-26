@@ -122,7 +122,7 @@
   function openPage() {
     document.querySelectorAll('.page').forEach((el) => el.classList.toggle('active', el.id === 'page-nash'));
     document.querySelectorAll('.nav-btn[data-page]').forEach((el) => el.classList.toggle('active', el.dataset.page === PAGE_ID));
-    window.location.hash = PAGE_ID;
+    window.location.hash = `${PAGE_ID}?variant=${encodeURIComponent(activeVariant())}`;
     refresh();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -132,13 +132,18 @@
       .flatMap((cell, index) => cell.classList.contains('selected') ? [index] : []);
   }
 
+  function activeVariant() {
+    return window.TTNActiveVariant || 'standard';
+  }
+
   function configuration() {
     const hidden = selectedHidden();
-    const rulesO = T.makeRules(hidden, O);
-    const rulesX = T.makeRules(hidden, X);
+    const variant = activeVariant();
+    const rulesO = T.makeRules(hidden, O, variant);
+    const rulesX = T.makeRules(hidden, X, variant);
     const artifactO = typeof T.exactLPArtifactForRules === 'function' ? T.exactLPArtifactForRules(rulesO) : null;
     const artifactX = typeof T.exactLPArtifactForRules === 'function' ? T.exactLPArtifactForRules(rulesX) : null;
-    return { hidden, rulesO, rulesX, artifactO, artifactX };
+    return { hidden, variant, rulesO, rulesX, artifactO, artifactX };
   }
 
   function finite(value, fallback = NaN) {
@@ -174,7 +179,7 @@
   function refresh() {
     const cfg = configuration();
     const configEl = document.getElementById('nash-config');
-    if (configEl) configEl.innerHTML = `Mystery cells <code>${cfg.hidden.map((m) => m + 1).join(', ') || 'none'}</code>`;
+    if (configEl) configEl.innerHTML = `${T.VARIANTS[cfg.variant]?.name || cfg.variant} · mystery cells <code>${cfg.hidden.map((m) => m + 1).join(', ') || 'none'}</code>`;
     const body = document.getElementById('nash-values-body');
     const button = document.getElementById('run-nash-benchmark');
     if (!body) return;
@@ -208,7 +213,7 @@
   }
 
   function solverFor(rules) {
-    const key = `${rules.hiddenMask}|${rules.startPlayer}`;
+    const key = `${rules.variantId}|${rules.hiddenMask}|${rules.startPlayer}`;
     if (!solvers.has(key)) solvers.set(key, new T.OutcomeSamplingMCCFR(rules, 0x4e415348 ^ rules.hiddenMask ^ (rules.startPlayer << 12)));
     const solver = solvers.get(key);
     if (solver.iterations < MCCFR_TARGET) solver.train(MCCFR_TARGET - solver.iterations);
@@ -339,5 +344,9 @@
   }
 
   installPage();
+  document.addEventListener('ttn-variant-changed', () => {
+    solvers.clear();
+    refresh();
+  });
   window.TTNNashBenchmark = { openPage, refresh, runBenchmark };
 })(window);

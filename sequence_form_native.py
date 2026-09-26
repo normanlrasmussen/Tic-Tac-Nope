@@ -118,7 +118,7 @@ def load_native():
     from sequence_form_lp import INFORMATION_MODEL
     if lib.ttn_information_model().decode() != INFORMATION_MODEL:
         raise NativeUnavailable("Native enumerator does not implement the current information model")
-    lib.ttn_build.argtypes = [u16, ctypes.c_int, u16, u16, u16, u16, ctypes.c_int,
+    lib.ttn_build.argtypes = [u16, u16, ctypes.c_int, ctypes.c_int, ctypes.c_int, u16, u16, u16, u16, ctypes.c_int, ctypes.c_int,
                               u64, u64, u64, u64, u64, ctypes.c_void_p]
     lib.ttn_build.restype = ctypes.c_void_p
     lib.ttn_error.argtypes = []
@@ -248,7 +248,7 @@ class NativeSequenceCatalog:
     def __init__(self, player, rules, arrays, n_sequences):
         self.player = player
         self.rules = rules
-        self.prefix = f"{player}|{rules.start_player}|{rules.hidden_mask}|"
+        self.prefix = f"{player}|{rules.variant_id}|{rules.start_player}|{rules.hidden_mask}|"
         self.obs_low, self.obs_high, self.parent_sequences, self.first_children, self.action_masks = arrays
         self._n_sequences = n_sequences
         self.infos = _InfoMapping(self)
@@ -406,8 +406,10 @@ def build_native(rules, root, node_limit=0):
     total_started = time.perf_counter()
     lib = load_native()
     _log("Starting complete native history traversal and chunked payoff aggregation")
-    pointer = _enumerate_interruptibly(lib, (rules.hidden_mask, rules.start_player,
-                            root.o_mask, root.x_mask, root.tried_o, root.tried_x, root.turn,
+    objective = {"three-in-row": 0, "three-in-ring": 1, "adjacent-pair-loss": 2}[rules.spec.terminal_objective]
+    pointer = _enumerate_interruptibly(lib, (rules.hidden_mask, rules.spec.playable_mask,
+                            int(rules.spec.allow_hidden_opening), objective, rules.start_player,
+                            root.o_mask, root.x_mask, root.tried_o, root.tried_x, root.turn, root.move_no,
                             *encode_observations(root.obs_o), *encode_observations(root.obs_x), node_limit))
 
     def array(field, count, ctype):

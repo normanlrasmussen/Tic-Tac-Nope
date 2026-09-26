@@ -30,7 +30,7 @@
   }
 
   function openHashPage() {
-    const page = (window.location.hash || '').replace('#', '');
+    const page = (window.location.hash || '').replace('#', '').split('?')[0];
     if (!['home', 'play', 'analysis', 'strategies', 'nash', 'nash-data', 'lp', 'simulate', 'rules'].includes(page)) return;
     if (page === 'nash' && window.TTNNashBenchmark?.openPage) {
       window.TTNNashBenchmark.openPage();

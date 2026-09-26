@@ -63,6 +63,10 @@
       .flatMap((cell, index) => cell.classList.contains('selected') ? [index] : []);
   }
 
+  function activeVariant() {
+    return global.TTNActiveVariant || 'standard';
+  }
+
   function fmtCount(value) {
     const n = Number(value);
     if (!Number.isFinite(n)) return '—';
@@ -220,7 +224,8 @@
     if (!root) return;
 
     const hidden = selectedHidden();
-    const rules = T.makeRules(hidden, T.O);
+    const variant = activeVariant();
+    const rules = T.makeRules(hidden, T.O, variant);
     const artifact = typeof T.exactLPArtifactForRules === 'function' ? T.exactLPArtifactForRules(rules) : null;
     const symmetry = typeof T.exactLPSymmetryForMask === 'function' ? T.exactLPSymmetryForMask(rules.hiddenMask) : null;
 
@@ -243,7 +248,7 @@
     root.innerHTML = `
       <div class="lp-hero-grid">
         <article class="lp-hero-card">
-          <p class="kicker">CURRENT SOLVED GAME · MYSTERY CELLS ${hidden.map((m) => m + 1).join(', ')}</p>
+          <p class="kicker">CURRENT SOLVED GAME · ${escapeHtml(T.VARIANTS[variant]?.name || variant)} · MYSTERY CELLS ${hidden.map((m) => m + 1).join(', ')}</p>
           <h2>${fmtCount(c.histories)} game histories become one certified equilibrium.</h2>
           <p>The solver explores the complete imperfect-information game offline, compresses it into sequence form, and exports only the behavioral decisions the website needs.</p>
           <div class="lp-metric-grid">
@@ -312,7 +317,8 @@
     document.querySelectorAll('.page').forEach((page) => page.classList.toggle('active', page.id === 'page-lp'));
     document.querySelectorAll('.topbar .nav-btn').forEach((button) => button.classList.toggle('active', button.dataset.page === 'nash'));
     document.querySelectorAll('.research-tabs [data-page]').forEach((button) => button.classList.toggle('active', button.dataset.page === PAGE_ID));
-    try { history.replaceState(null, '', '#lp'); } catch (_) { /* no-op */ }
+    const variant = activeVariant();
+    try { history.replaceState(null, '', `#lp?variant=${encodeURIComponent(variant)}`); } catch (_) { /* no-op */ }
     refresh();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -350,6 +356,7 @@
     installed = true;
     installPage();
     installNavigation();
+    document.addEventListener('ttn-variant-changed', refresh);
     syncTabs();
     refresh();
     global.addEventListener('ttn-lp-artifacts-loaded', refresh);

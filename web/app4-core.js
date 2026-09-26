@@ -49,10 +49,17 @@
   };
 
   let selectedHidden = new Set([1, 3]);
+  function variantFromLocation() {
+    const source = window.location.hash.includes('?') ? window.location.hash.split('?')[1] : window.location.search.slice(1);
+    const value = new URLSearchParams(source).get('variant');
+    return T.VARIANTS[value] ? value : 'standard';
+  }
+  let variantId = variantFromLocation();
+  window.TTNActiveVariant = variantId;
   let humanStarts = true;
   let aiStrategy = 'belief';
   let decisionStrategy = 'belief';
-  let rules = T.makeRules([...selectedHidden], O);
+  let rules = T.makeRules([...selectedHidden], O, variantId);
   let state = T.makeRoot(rules);
   let tracker = new T.BeliefTracker(rules);
   let aiTimer = null;
@@ -66,7 +73,7 @@
   const forecastCache = new Map();
   const analysisTargets = new Map();
 
-  function rulesKey(r = rules) { return `${r.hiddenMask}|${r.startPlayer}`; }
+  function rulesKey(r = rules) { return `${r.variantId}|${r.hiddenMask}|${r.startPlayer}`; }
   function solverFor(r = rules) {
     const key = rulesKey(r);
     if (!solverCache.has(key)) solverCache.set(key, new T.OutcomeSamplingMCCFR(r, 20260903));
@@ -77,7 +84,7 @@
     if (solver.iterations < target) solver.train(target - solver.iterations);
     return solver;
   }
-  function selectedRules(start = (humanStarts ? O : X)) { return T.makeRules([...selectedHidden], start); }
+  function selectedRules(start = (humanStarts ? O : X)) { return T.makeRules([...selectedHidden], start, variantId); }
   function currentHumanWorlds() { return tracker.for(O); }
   function entropyCount(n) { return n > 0 ? Math.log2(n) : 0; }
   function isHidden(move, r = rules) { return Boolean(r.hiddenMask & T.bit(move)); }
@@ -136,6 +143,13 @@
   function installSetup() {
     populateStrategySelect($('ai-strategy'));
     $('ai-strategy').value = aiStrategy;
+    const variantSelect = $('variant-select');
+    if (variantSelect) {
+      variantSelect.innerHTML = Object.values(T.VARIANTS).map((item) => `<option value="${item.variantId}">${item.name}</option>`).join('');
+      variantSelect.value = variantId;
+      variantSelect.addEventListener('change', () => setVariant(variantSelect.value));
+    }
+    document.querySelectorAll('[data-variant]').forEach((button) => button.addEventListener('click', () => setVariant(button.dataset.variant)));
     $('ai-strategy').addEventListener('change', () => {
       aiStrategy = $('ai-strategy').value;
       const solver = solverFor(rules);
@@ -159,6 +173,36 @@
 
     $('new-game').addEventListener('click', startGame);
     renderPicker();
+    renderVariantRules();
+    document.querySelectorAll('[data-variant]').forEach((button) => button.classList.toggle('active', button.dataset.variant === variantId));
+    if ($('variant-title')) $('variant-title').textContent = T.VARIANTS[variantId].name;
+  }
+
+  function setVariant(nextVariant) {
+    if (!T.VARIANTS[nextVariant]) return;
+    variantId = nextVariant;
+    window.TTNActiveVariant = variantId;
+    const hashBase = window.location.hash.split('?')[0] || '#play';
+    history.replaceState(null, '', `${hashBase}?variant=${encodeURIComponent(variantId)}`);
+    const spec = T.VARIANTS[variantId];
+    for (const move of [...selectedHidden]) if (!(spec.playableMask & T.bit(move))) selectedHidden.delete(move);
+    while (selectedHidden.size < 2) {
+      const candidate = Array.from({ length: 9 }, (_, move) => move).find((move) => (spec.playableMask & T.bit(move)) && !selectedHidden.has(move));
+      if (candidate === undefined) break;
+      selectedHidden.add(candidate);
+    }
+    if (!spec.allowHiddenOpening && selectedHidden.size === T.popcount(spec.playableMask)) {
+      selectedHidden.delete([...selectedHidden][selectedHidden.size - 1]);
+    }
+    if ($('variant-select')) $('variant-select').value = variantId;
+    document.querySelectorAll('[data-variant]').forEach((button) => button.classList.toggle('active', button.dataset.variant === variantId));
+    if ($('variant-title')) $('variant-title').textContent = spec.name;
+    invalidateDerivedViews();
+    renderPicker();
+    renderVariantRules();
+    startGame();
+    document.dispatchEvent(new CustomEvent('ttn-variant-changed', { detail: { variant: variantId } }));
+    if (window.TTNNashAtlas?.refresh) window.TTNNashAtlas.refresh();
   }
 
   function installDecisionStrategy() {
@@ -178,13 +222,20 @@
   function renderPicker() {
     const el = $('hidden-picker');
     el.innerHTML = '';
+    const spec = T.VARIANTS[variantId];
     for (let move = 0; move < 9; move++) {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = move + 1;
-      button.className = `picker-cell${selectedHidden.has(move) ? ' selected' : ''}`;
+      button.className = `picker-cell${selectedHidden.has(move) ? ' selected' : ''}${spec.playableMask & T.bit(move) ? '' : ' unavailable'}`;
+      button.disabled = !(spec.playableMask & T.bit(move));
       button.setAttribute('aria-pressed', selectedHidden.has(move) ? 'true' : 'false');
       button.addEventListener('click', () => {
+        if (button.disabled) return;
+        if (!selectedHidden.has(move) && !spec.allowHiddenOpening && selectedHidden.size + 1 >= T.popcount(spec.playableMask)) {
+          $('setup-note').textContent = 'Keep at least one visible opening cell for this variant.';
+          return;
+        }
         if (selectedHidden.has(move) && selectedHidden.size <= 2) {
           $('setup-note').textContent = 'Keep at least two mystery cells.';
           return;
@@ -197,6 +248,28 @@
       el.appendChild(button);
     }
     $('hidden-count-badge').textContent = `${selectedHidden.size} hidden`;
+  }
+
+  function renderVariantRules() {
+    const spec = T.VARIANTS[variantId];
+    const title = $('rules-title');
+    const lede = title?.parentElement?.querySelector('.lede');
+    const flow = document.querySelector('#page-rules .rules-flow');
+    if (!flow) return;
+    if (title) title.textContent = spec.name;
+    if (lede) lede.textContent = variantId === 'no-hidden-opening'
+      ? 'The first move must be visible; hidden ownership and hidden attempts still work afterward.'
+      : spec.objective === 'three-in-ring'
+        ? 'The center is removed and the eight perimeter cells form a circular playing track.'
+        : spec.objective === 'adjacent-pair-loss'
+          ? 'The center is removed. The first player to create adjacent perimeter ownership loses.'
+          : 'The board locations that are mysterious are public. Their ownership—and the result of a mystery attempt—may not be.';
+    const cards = variantId === 'no-center-ring-pair-loss'
+      ? [['01', 'The center is absent', 'Cell 5 cannot be selected, occupied, or hidden. The playable cells form the perimeter cycle 4 → 1 → 2 → 3 → 6 → 9 → 8 → 7 → 4.'], ['02', 'Hidden attempts still work', 'Each player may attempt each hidden perimeter cell once. A failed attempt consumes the turn and reveals no success or failure signal.'], ['03', 'Adjacent ownership loses', 'A pair means two owned cells adjacent in the perimeter cycle. Creating the first adjacent pair immediately loses.'], ['04', 'No three-in-a-row victory', 'Three-in-a-row has no special status in this variant. A full perimeter with no adjacent pair is a draw.']]
+      : spec.objective === 'three-in-ring'
+        ? [['01', 'The center is absent', 'Cell 5 does not exist and cannot be selected, occupied, or hidden.'], ['02', 'The perimeter is circular', 'The playable order is 4 → 1 → 2 → 3 → 6 → 9 → 8 → 7 → 4. Any three consecutive cells in that cycle win, including 4-1-2.'], ['03', 'Hidden attempts are private', 'A hidden attempt can claim an empty cell or fail against an occupied cell, but the acting player receives no success/failure signal.'], ['04', 'The first ring triple wins', 'The first player owning three consecutive perimeter cells wins. A full perimeter without a win is a draw.']]
+        : [['01', 'Make three in a row', 'O and X alternate turns. The first player with three owned cells in a row, column, or diagonal wins.'], ['02', 'Mystery locations are public', 'Both players know which locations are mysterious, but hidden ownership and failed attempts may remain private.'], ['03', variantId === 'no-hidden-opening' ? 'The opening must be visible' : 'A hidden opening is allowed', variantId === 'no-hidden-opening' ? 'The first move must target an ordinary visible cell. Hidden actions become legal from the second move.' : 'A player may target a hidden cell on the first move.'], ['04', 'Hidden attempts consume a turn', 'Each player may attempt each hidden cell once. An attempt claims the cell only if it is empty and gives no success/failure feedback.']];
+    flow.innerHTML = cards.map(([number, heading, copy]) => `<article class="rule-card"><span>${number}</span><h2>${heading}</h2><p>${copy}</p></article>`).join('');
   }
 
   function startGame() {
@@ -306,6 +379,7 @@
       const cell = document.createElement('button');
       cell.type = 'button';
       cell.className = 'cell';
+      if (!(rules.playableMask & T.bit(move))) cell.classList.add('unavailable');
       const display = boardDisplay(move);
       cell.textContent = display.text;
       if (display.cls) cell.classList.add(...display.cls.split(' '));
@@ -792,7 +866,7 @@
   }
 
   function validateModelSampled() {
-    const sampleRules = T.makeRules([1, 3], O);
+    const sampleRules = T.makeRules([1, 3], O, variantId);
     const rng = seededRandom('structural-validation');
     const seen = new Map();
     for (let episode = 0; episode < 500; episode++) {

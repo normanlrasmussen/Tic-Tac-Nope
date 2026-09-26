@@ -17,6 +17,7 @@ from sequence_form_lp import (
     FEASIBILITY_TOLERANCE, INFORMATION_MODEL, O, X, Rules, SequenceCatalog,
     bit, build_sequence_game, parse_hidden, certify_equilibrium, solve_equilibrium,
 )
+from variant_rules import VARIANTS
 
 
 def log_progress(message: str) -> None:
@@ -108,6 +109,7 @@ def compact_policy_and_realization(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--hidden", type=parse_hidden, required=True, help="1-based mystery cells, e.g. 2,4")
+    parser.add_argument("--variant", choices=tuple(VARIANTS), default="standard")
     parser.add_argument("--start", choices=("O", "X"), default="O")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--node-limit", type=int, default=0)
@@ -132,7 +134,7 @@ def main() -> None:
         log_progress("--policy-tol is deprecated: retaining every positive policy weight for exact export.")
 
     hidden_mask = sum(bit(move) for move in args.hidden)
-    rules = Rules(hidden_mask=hidden_mask, start_player=O if args.start == "O" else X)
+    rules = Rules(hidden_mask=hidden_mask, start_player=O if args.start == "O" else X, variant_id=args.variant)
     started = time.perf_counter()
     log_progress(f"Started enumeration for hidden={tuple(m + 1 for m in args.hidden)}, start={args.start}...")
     game = build_sequence_game(rules, node_limit=args.node_limit, backend=args.enumerator)
@@ -161,6 +163,8 @@ def main() -> None:
         "solver": getattr(result, "solver_backend", "HiGHS"),
         "game": "Tic-Tac-Nope",
         "informationModel": INFORMATION_MODEL,
+        "variant": args.variant,
+        "rulesVersion": rules.spec.rules_version,
         "hidden": [move + 1 for move in args.hidden],
         "hiddenMask": hidden_mask,
         "startPlayer": args.start,

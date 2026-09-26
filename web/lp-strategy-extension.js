@@ -7,7 +7,6 @@
   const ID = 'lp';
   const NAME = 'Exact Nash (Sequence-Form LP)';
   const DETAIL_URL = './strategy-lp.html';
-  const MANIFEST_URL = './equilibria/manifest.json';
   const CERTIFICATE_TOLERANCE = 1e-7;
   const artifacts = new Map();
   let manifest = { artifacts: [] };
@@ -22,7 +21,7 @@
     throw new Error(`Exact LP received invalid player id ${player}.`);
   }
 
-  function configKey(mask, startPlayer) { return `${Number(mask)}|${symbol(startPlayer)}`; }
+  function configKey(mask, startPlayer, variant = 'standard') { return `${variant}|${Number(mask)}|${symbol(startPlayer)}`; }
 
   function currentModelArtifact(value) {
     const gap = Number(value?.dualityGap);
@@ -107,13 +106,18 @@
     return transformed;
   }
 
-  function canonicalInformationKey(state, rules, player, symmetry) {
+  function canonicalInformationKey(state, rules, player, symmetry, legacy = false) {
     if (!symmetry) throw new Error(`Exact LP symmetry mapping is unavailable for mask ${rules.hiddenMask}.`);
     const rawKey = T.informationKey(state, rules, player);
     const parts = rawKey.split('|');
-    if (parts.length !== 4) throw new Error(`Exact LP received malformed information key ${rawKey}.`);
-    const transformedObservation = transformObservation(parts[3], symmetry.toCanonical);
-    return `${parts[0]}|${parts[1]}|${symmetry.canonicalMask}|${transformedObservation}`;
+    if (parts.length !== 4 && parts.length !== 5) throw new Error(`Exact LP received malformed information key ${rawKey}.`);
+    const observationPart = parts[parts.length - 1];
+    const transformedObservation = transformObservation(observationPart, symmetry.toCanonical);
+    if (legacy || parts.length === 4) {
+      const start = parts.length === 5 ? parts[2] : parts[1];
+      return `${parts[0]}|${start}|${symmetry.canonicalMask}|${transformedObservation}`;
+    }
+    return `${parts[0]}|${parts[1]}|${parts[2]}|${symmetry.canonicalMask}|${transformedObservation}`;
   }
 
   function selectedConfiguration() {
@@ -123,13 +127,13 @@
       if (Number.isInteger(move) && move >= 0 && move < 9) mask |= (1 << move);
     });
     const opponentOpens = document.querySelector('[data-order="second"]')?.classList.contains('active');
-    return { mask, startPlayer: opponentOpens ? T.X : T.O };
+    return { mask, startPlayer: opponentOpens ? T.X : T.O, variantId: window.TTNActiveVariant || 'standard' };
   }
 
   function artifactForRules(rules) {
     const symmetry = symmetryForMask(rules.hiddenMask);
     if (!symmetry) return null;
-    const artifact = artifacts.get(configKey(symmetry.canonicalMask, rules.startPlayer)) || null;
+    const artifact = artifacts.get(configKey(symmetry.canonicalMask, rules.startPlayer, rules.variantId || 'standard')) || null;
     return currentModelArtifact(artifact) ? artifact : null;
   }
 
@@ -138,7 +142,7 @@
     if (!symmetry) {
       throw new Error(`Exact Nash unavailable: no valid symmetry mapping for hidden mask ${rules.hiddenMask}.`);
     }
-    const artifact = artifacts.get(configKey(symmetry.canonicalMask, rules.startPlayer)) || null;
+    const artifact = artifacts.get(configKey(symmetry.canonicalMask, rules.startPlayer, rules.variantId || 'standard')) || null;
     if (!currentModelArtifact(artifact)) {
       throw new Error(
         `Exact Nash unavailable: no certified LP artifact for mask ${symmetry.canonicalMask}, `
@@ -147,7 +151,7 @@
     }
 
     const player = state.turn;
-    const key = canonicalInformationKey(state, rules, player, symmetry);
+    const key = canonicalInformationKey(state, rules, player, symmetry, !artifact.variant);
     const table = artifact.policy[symbol(player)]?.[key];
     if (!table || typeof table !== 'object') {
       throw new Error(
@@ -255,7 +259,7 @@
 
   function refreshSelectors() {
     const cfg = selectedConfiguration();
-    const available = Boolean(artifactForRules({ hiddenMask: cfg.mask, startPlayer: cfg.startPlayer }));
+    const available = Boolean(artifactForRules({ hiddenMask: cfg.mask, startPlayer: cfg.startPlayer, variantId: cfg.variantId }));
     for (const id of ['ai-strategy', 'decision-strategy']) {
       const select = document.getElementById(id);
       if (!select) continue;
@@ -275,8 +279,10 @@
 
   async function loadArtifacts() {
     artifacts.clear();
+    const variant = window.TTNActiveVariant || 'standard';
     try {
-      const response = await fetch(MANIFEST_URL, { cache: 'no-store' });
+      let response = await fetch(`./equilibria/${variant}/manifest.json`, { cache: 'no-store' });
+      if (!response.ok && variant === 'standard') response = await fetch('./equilibria/manifest.json', { cache: 'no-store' });
       if (!response.ok) throw new Error(`manifest HTTP ${response.status}`);
       manifest = await response.json();
 
@@ -284,7 +290,8 @@
         ? manifest.symmetryMap
         : 'symmetry-map.json';
       try {
-        const symmetryResponse = await fetch(`./equilibria/${symmetryPath}`, { cache: 'no-store' });
+        const symmetryBase = manifest.variant ? `${manifest.variant}/` : '';
+        const symmetryResponse = await fetch(`./equilibria/${symmetryBase}${symmetryPath}`, { cache: 'no-store' });
         if (!symmetryResponse.ok) throw new Error(`HTTP ${symmetryResponse.status}`);
         const loadedSymmetry = await symmetryResponse.json();
         if (!loadedSymmetry || typeof loadedSymmetry.masks !== 'object') throw new Error('invalid symmetry-map payload');
@@ -295,7 +302,7 @@
       }
 
       const entries = Array.isArray(manifest.artifacts) ? manifest.artifacts : [];
-      const compatibleEntries = entries.filter((entry) => entry.informationModel === T.INFORMATION_MODEL);
+      const compatibleEntries = entries.filter((entry) => entry.informationModel === T.INFORMATION_MODEL && (entry.variant || 'standard') === variant);
       await Promise.all(compatibleEntries.map(async (entry) => {
         try {
           const result = await fetch(`./equilibria/${entry.file}`, { cache: 'no-store' });
@@ -308,12 +315,13 @@
             Number(artifact.hiddenMask) !== Number(entry.hiddenMask)
             || artifact.startPlayer !== entry.startPlayer
             || artifact.informationModel !== entry.informationModel
+            || (artifact.variant || 'standard') !== variant
           ) {
             throw new Error('artifact metadata does not match its manifest entry');
           }
           const startPlayer = artifact.startPlayer === 'O' ? T.O : artifact.startPlayer === 'X' ? T.X : null;
           if (startPlayer === null) throw new Error(`invalid startPlayer ${artifact.startPlayer}`);
-          const key = configKey(artifact.hiddenMask, startPlayer);
+          const key = configKey(artifact.hiddenMask, startPlayer, variant);
           if (artifacts.has(key)) throw new Error(`duplicate exact artifact for ${key}`);
           artifacts.set(key, artifact);
         } catch (error) {
@@ -377,5 +385,6 @@
   document.getElementById('hidden-picker')?.addEventListener('click', () => setTimeout(refreshSelectors, 0));
   document.getElementById('turn-order')?.addEventListener('click', () => setTimeout(refreshSelectors, 0));
   document.getElementById('new-game')?.addEventListener('click', () => setTimeout(refreshSelectors, 0));
+  document.addEventListener('ttn-variant-changed', () => loadArtifacts());
   loadArtifacts();
 })();

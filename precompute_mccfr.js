@@ -22,6 +22,7 @@ function parseHidden(text) {
 }
 
 const hidden = parseHidden(arg('hidden'));
+const variant = String(arg('variant', 'standard'));
 const startText = String(arg('start', 'O')).toUpperCase();
 if (!['O', 'X'].includes(startText)) throw new Error('--start must be O or X');
 const iterations = Math.max(1, Number.parseInt(arg('iterations', '1000000'), 10));
@@ -32,7 +33,7 @@ if (!output) throw new Error('--output is required');
 
 const hiddenMoves = hidden.map((x) => x - 1);
 const startPlayer = startText === 'O' ? T.O : T.X;
-const rules = T.makeRules(hiddenMoves, startPlayer);
+const rules = T.makeRules(hiddenMoves, startPlayer, variant);
 const solver = new T.OutcomeSamplingMCCFR(rules, seed, exploration);
 
 const chunk = Math.min(100000, iterations);
@@ -58,6 +59,8 @@ const artifact = {
   solver: 'OutcomeSamplingMCCFR',
   game: 'Tic-Tac-Nope',
   informationModel: T.INFORMATION_MODEL,
+  variant,
+  rulesVersion: 1,
   hidden,
   hiddenMask: rules.hiddenMask,
   startPlayer: startText,

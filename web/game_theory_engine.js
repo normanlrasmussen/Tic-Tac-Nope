@@ -6,7 +6,16 @@
   const EMPTY = 0;
   const FULL_MASK = 0x1ff;
   const WIN_MASKS = [0x007, 0x038, 0x1c0, 0x049, 0x092, 0x124, 0x111, 0x054];
+  const RING = [3, 0, 1, 2, 5, 8, 7, 6];
+  const RING_TRIPLES = RING.map((_, i) => RING.slice(0, 3).map((__, j) => bit(RING[(i + j) % RING.length])).reduce((a, b) => a | b, 0));
+  const RING_PAIRS = RING.map((_, i) => bit(RING[i]) | bit(RING[(i + 1) % RING.length]));
   const INFORMATION_MODEL = 'hidden-attempt-location-no-result-v2';
+  const VARIANTS = Object.freeze({
+    standard: Object.freeze({ variantId: 'standard', name: 'Hidden Tiles', playableMask: FULL_MASK, allowHiddenOpening: true, objective: 'three-in-row', winningPatterns: WIN_MASKS, losingPatterns: [] }),
+    'no-hidden-opening': Object.freeze({ variantId: 'no-hidden-opening', name: 'No Hidden Opening Move', playableMask: FULL_MASK, allowHiddenOpening: false, objective: 'three-in-row', winningPatterns: WIN_MASKS, losingPatterns: [] }),
+    'no-center-ring': Object.freeze({ variantId: 'no-center-ring', name: 'No Center', playableMask: FULL_MASK ^ bit(4), allowHiddenOpening: true, objective: 'three-in-ring', winningPatterns: RING_TRIPLES, losingPatterns: [] }),
+    'no-center-ring-pair-loss': Object.freeze({ variantId: 'no-center-ring-pair-loss', name: 'No Center · Pairs Lose', playableMask: FULL_MASK ^ bit(4), allowHiddenOpening: true, objective: 'adjacent-pair-loss', winningPatterns: [], losingPatterns: RING_PAIRS })
+  });
 
   function other(player) { return player === O ? X : O; }
   function symbol(player) { return player === O ? 'O' : player === X ? 'X' : ''; }
@@ -16,37 +25,45 @@
   function movesToMask(moves) { return moves.reduce((m, x) => m | bit(x), 0); }
   function hasWin(mask) { return WIN_MASKS.some((w) => (mask & w) === w); }
 
-  function makeRules(hiddenMoves, startPlayer = O) {
+  function makeRules(hiddenMoves, startPlayer = O, variantId = 'standard') {
+    const spec = VARIANTS[variantId];
+    if (!spec) throw new Error(`Unknown Tic-Tac-Nope variant: ${variantId}`);
     const hidden = [...new Set(hiddenMoves)].sort((a, b) => a - b);
     if (hidden.length < 2) throw new Error('Tic-Tac-Nope requires at least two mystery cells.');
     if (hidden.some((m) => m < 0 || m > 8 || !Number.isInteger(m))) throw new Error('Mystery cells must be integers 0..8.');
-    return Object.freeze({ hidden, hiddenMask: movesToMask(hidden), startPlayer });
+    const hiddenMask = movesToMask(hidden);
+    if ((hiddenMask & ~spec.playableMask) || (!spec.allowHiddenOpening && hiddenMask === spec.playableMask)) {
+      throw new Error(`Invalid mystery-cell layout for ${variantId}.`);
+    }
+    return Object.freeze({ ...spec, hidden, hiddenMask, startPlayer });
   }
 
   function makeRoot(rules) {
-    return { oMask: 0, xMask: 0, triedO: 0, triedX: 0, turn: rules.startPlayer, obsO: '', obsX: '', moveNo: 0, last: null };
+    return { oMask: 0, xMask: 0, triedO: 0, triedX: 0, turn: rules.startPlayer, obsO: '', obsX: '', moveNo: 0, last: null, rules };
   }
 
   function occupiedMask(state) { return state.oMask | state.xMask; }
   function triedMask(state, player) { return player === O ? state.triedO : state.triedX; }
   function observation(state, player) { return player === O ? state.obsO : state.obsX; }
 
-  function terminal(state) {
-    if (hasWin(state.oMask)) return { done: true, winner: O };
-    if (hasWin(state.xMask)) return { done: true, winner: X };
-    if (occupiedMask(state) === FULL_MASK) return { done: true, winner: 0 };
+  function terminal(state, rules = state.rules || VARIANTS.standard) {
+    const oTerminal = rules.objective === 'adjacent-pair-loss' ? rules.losingPatterns.some((p) => (state.oMask & p) === p) : rules.winningPatterns.some((p) => (state.oMask & p) === p);
+    const xTerminal = rules.objective === 'adjacent-pair-loss' ? rules.losingPatterns.some((p) => (state.xMask & p) === p) : rules.winningPatterns.some((p) => (state.xMask & p) === p);
+    if (oTerminal) return { done: true, winner: rules.objective === 'adjacent-pair-loss' ? X : O };
+    if (xTerminal) return { done: true, winner: rules.objective === 'adjacent-pair-loss' ? O : X };
+    if ((occupiedMask(state) & rules.playableMask) === rules.playableMask) return { done: true, winner: 0 };
     return { done: false, winner: null };
   }
 
-  function utility(state, rootPlayer) {
-    const t = terminal(state);
+  function utility(state, rootPlayer, rules = state.rules || VARIANTS.standard) {
+    const t = terminal(state, rules);
     if (!t.done) return null;
     if (t.winner === 0) return 0;
     return t.winner === rootPlayer ? 1 : -1;
   }
 
   function legalActions(state, rules, player = state.turn) {
-    if (terminal(state).done) return [];
+    if (terminal(state, rules).done) return [];
     const occ = occupiedMask(state);
     const tried = triedMask(state, player);
     const out = [];
@@ -54,8 +71,9 @@
       const b = bit(move);
       if (rules.hiddenMask & b) {
         if (!(tried & b)) out.push(move);
-      } else if (!(occ & b)) out.push(move);
+      } else if ((rules.playableMask & b) && !(occ & b)) out.push(move);
     }
+    if (state.moveNo === 0 && !rules.allowHiddenOpening) return out.filter((move) => !(rules.hiddenMask & bit(move)));
     return out;
   }
 
@@ -90,7 +108,7 @@
   }
 
   function informationKey(state, rules, player = state.turn) {
-    return `${player}|${rules.startPlayer}|${rules.hiddenMask}|${observation(state, player)}`;
+    return `${player}|${rules.variantId}|${rules.startPlayer}|${rules.hiddenMask}|${observation(state, player)}`;
   }
 
   function stateKey(state) {
@@ -154,7 +172,7 @@
 
   const oracleMemo = new Map();
   function oracleKey(state, rules, root) {
-    return `${state.oMask}|${state.xMask}|${state.triedO}|${state.triedX}|${state.turn}|${rules.hiddenMask}|${root}`;
+    return `${rules.variantId}|${state.oMask}|${state.xMask}|${state.triedO}|${state.triedX}|${state.turn}|${rules.hiddenMask}|${root}`;
   }
   function oracleValue(state, rules, root) {
     const immediate = utility(state, root);
@@ -372,5 +390,5 @@
     { id: 'oracle', name: 'Omniscient Oracle', family: 'Cheating benchmark', play: false, sim: true }
   ];
 
-  global.TTNTheory = { X, O, EMPTY, WIN_MASKS, INFORMATION_MODEL, other, symbol, bit, popcount, maskToMoves, movesToMask, makeRules, makeRoot, terminal, utility, legalActions, applyAction, informationKey, boardArray, stateKey, updateBeliefs, BeliefTracker, oracleValue, beliefActionRows, softmaxPolicy, samplePolicy, RNG, OutcomeSamplingMCCFR, chooseStrategy, STRATEGIES };
+  global.TTNTheory = { X, O, EMPTY, WIN_MASKS, INFORMATION_MODEL, VARIANTS, other, symbol, bit, popcount, maskToMoves, movesToMask, makeRules, makeRoot, terminal, utility, legalActions, applyAction, informationKey, boardArray, stateKey, updateBeliefs, BeliefTracker, oracleValue, beliefActionRows, softmaxPolicy, samplePolicy, RNG, OutcomeSamplingMCCFR, chooseStrategy, STRATEGIES };
 })(window);

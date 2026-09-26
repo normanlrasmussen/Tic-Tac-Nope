@@ -13,7 +13,7 @@
 
   let localHidden = new Set(readPrimaryHidden().length >= 2 ? readPrimaryHidden() : [1, 3]);
   let localStartPlayer = O;
-  let localRules = T.makeRules([...localHidden], localStartPlayer);
+  let localRules = T.makeRules([...localHidden], localStartPlayer, window.TTNActiveVariant || 'standard');
   let localState = T.makeRoot(localRules);
   let localTracker = new T.BeliefTracker(localRules);
   let localStarted = false;
@@ -49,7 +49,8 @@
 
   function setHash(page) {
     if (!page) return;
-    try { history.replaceState(null, '', `#${page}`); } catch (_) { /* no-op */ }
+    const variant = window.TTNActiveVariant || 'standard';
+    try { history.replaceState(null, '', `#${page}?variant=${encodeURIComponent(variant)}`); } catch (_) { /* no-op */ }
   }
 
   function setPlayMode(mode, options = {}) {
@@ -94,13 +95,20 @@
     const root = $('local-hidden-picker');
     if (!root) return;
     root.innerHTML = '';
+    const spec = T.VARIANTS[window.TTNActiveVariant || 'standard'];
     for (let move = 0; move < 9; move++) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = `picker-cell${localHidden.has(move) ? ' selected' : ''}`;
+      button.className = `picker-cell${localHidden.has(move) ? ' selected' : ''}${spec.playableMask & T.bit(move) ? '' : ' unavailable'}`;
+      button.disabled = !(spec.playableMask & T.bit(move));
       button.textContent = String(move + 1);
       button.setAttribute('aria-pressed', localHidden.has(move) ? 'true' : 'false');
       button.addEventListener('click', () => {
+        if (button.disabled) return;
+        if (!localHidden.has(move) && !spec.allowHiddenOpening && localHidden.size + 1 >= T.popcount(spec.playableMask)) {
+          if ($('local-setup-note')) $('local-setup-note').textContent = 'Keep at least one visible opening cell for this variant.';
+          return;
+        }
         if (localHidden.has(move) && localHidden.size <= 2) {
           if ($('local-setup-note')) $('local-setup-note').textContent = 'Keep at least two mystery cells.';
           return;
@@ -115,7 +123,15 @@
   }
 
   function startLocalGame() {
-    localRules = T.makeRules([...localHidden], localStartPlayer);
+    const spec = T.VARIANTS[window.TTNActiveVariant || 'standard'];
+    for (const move of [...localHidden]) if (!(spec.playableMask & T.bit(move))) localHidden.delete(move);
+    while (localHidden.size < 2) {
+      const candidate = Array.from({ length: 9 }, (_, move) => move).find((move) => (spec.playableMask & T.bit(move)) && !localHidden.has(move));
+      if (candidate === undefined) break;
+      localHidden.add(candidate);
+    }
+    if (!spec.allowHiddenOpening && localHidden.size === T.popcount(spec.playableMask)) localHidden.delete([...localHidden][localHidden.size - 1]);
+    localRules = T.makeRules([...localHidden], localStartPlayer, window.TTNActiveVariant || 'standard');
     localState = T.makeRoot(localRules);
     localTracker = new T.BeliefTracker(localRules);
     localStarted = true;
@@ -240,6 +256,27 @@
     renderLocal();
   }
 
+  function resetLocalForVariant() {
+    const variant = window.TTNActiveVariant || 'standard';
+    const spec = T.VARIANTS[variant];
+    for (const move of [...localHidden]) if (!(spec.playableMask & T.bit(move))) localHidden.delete(move);
+    while (localHidden.size < 2) {
+      const candidate = Array.from({ length: 9 }, (_, move) => move)
+        .find((move) => (spec.playableMask & T.bit(move)) && !localHidden.has(move));
+      if (candidate === undefined) break;
+      localHidden.add(candidate);
+    }
+    if (!spec.allowHiddenOpening && localHidden.size === T.popcount(spec.playableMask)) {
+      localHidden.delete([...localHidden][localHidden.size - 1]);
+    }
+    localRules = T.makeRules([...localHidden], localStartPlayer, variant);
+    localState = T.makeRoot(localRules);
+    localTracker = new T.BeliefTracker(localRules);
+    localStarted = false;
+    localReady = false;
+    renderLocal();
+  }
+
   function clickPrimaryHidden(move) {
     const button = document.querySelectorAll('#hidden-picker .picker-cell')[move];
     if (button) button.click();
@@ -310,7 +347,7 @@
       }, 0);
     });
     window.addEventListener('hashchange', () => {
-      const page = (window.location.hash || '').replace('#', '');
+      const page = (window.location.hash || '').replace('#', '').split('?')[0];
       if (page) setTimeout(() => updateNavForPage(page), 0);
     });
   }
@@ -324,6 +361,7 @@
       installResearchConfig();
       refreshSyncPickers();
     });
+    document.addEventListener('ttn-variant-changed', resetLocalForVariant);
     document.getElementById('hidden-picker')?.addEventListener('click', () => setTimeout(refreshSyncPickers, 0));
 
     const currentPage = document.querySelector('.page.active')?.id?.replace('page-', '') || 'home';

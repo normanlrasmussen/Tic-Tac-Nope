@@ -20,10 +20,11 @@ from typing import Dict, List, Tuple
 import numpy as np
 from scipy.optimize import OptimizeResult
 from scipy.sparse import coo_matrix, csr_matrix
+from variant_rules import FULL_BOARD_MASK, VARIANTS, variant_spec, valid_hidden_mask
 
 X, O = 1, 2
-FULL_MASK = 0x1FF
-WIN_MASKS = (0x007, 0x038, 0x1C0, 0x049, 0x092, 0x124, 0x111, 0x054)
+FULL_MASK = FULL_BOARD_MASK
+WIN_MASKS = VARIANTS["standard"].winning_patterns
 INFORMATION_MODEL = "hidden-attempt-location-no-result-v2"
 _WINS = tuple(any(mask & win == win for win in WIN_MASKS) for mask in range(512))
 _ACTIONS = tuple(tuple(i for i in range(9) if mask & (1 << i)) for mask in range(512))
@@ -70,6 +71,22 @@ def has_win(mask: int) -> bool:
 class Rules:
     hidden_mask: int
     start_player: int
+    variant_id: str = "standard"
+
+    def __post_init__(self):
+        spec = variant_spec(self.variant_id)
+        if not 0 <= self.hidden_mask <= FULL_MASK:
+            raise ValueError("hidden_mask must fit the nine-cell board")
+        if self.start_player not in (O, X):
+            raise ValueError("start_player must be O or X")
+        # A zero-hidden Rules object is retained for internal transition/table
+        # tests; public CLIs and browser setup enforce the user-facing minimum.
+        if self.hidden_mask.bit_count() >= 2 and not valid_hidden_mask(self.hidden_mask, spec):
+            raise ValueError(f"Invalid hidden mask {self.hidden_mask} for variant {self.variant_id}")
+
+    @property
+    def spec(self):
+        return variant_spec(self.variant_id)
 
 
 @dataclass(frozen=True)
@@ -92,18 +109,24 @@ def occupied(state: State) -> int:
     return state.o_mask | state.x_mask
 
 
-def terminal_winner(state: State) -> int | None:
-    if has_win(state.o_mask):
+def terminal_winner(state: State, rules: Rules) -> int | None:
+    spec = rules.spec
+    if spec.terminal_objective == "adjacent-pair-loss":
+        if any(state.o_mask & pattern == pattern for pattern in spec.losing_patterns):
+            return X
+        if any(state.x_mask & pattern == pattern for pattern in spec.losing_patterns):
+            return O
+    elif any(state.o_mask & pattern == pattern for pattern in spec.winning_patterns):
         return O
-    if has_win(state.x_mask):
+    if spec.terminal_objective != "adjacent-pair-loss" and any(state.x_mask & pattern == pattern for pattern in spec.winning_patterns):
         return X
-    if occupied(state) == FULL_MASK:
+    if occupied(state) == spec.playable_mask:
         return 0
     return None
 
 
-def utility_o(state: State) -> float | None:
-    winner = terminal_winner(state)
+def utility_o(state: State, rules: Rules) -> float | None:
+    winner = terminal_winner(state, rules)
     if winner is None:
         return None
     if winner == 0:
@@ -112,7 +135,7 @@ def utility_o(state: State) -> float | None:
 
 
 def legal_actions(state: State, rules: Rules) -> Tuple[int, ...]:
-    if terminal_winner(state) is not None:
+    if terminal_winner(state, rules) is not None:
         return ()
     return _nonterminal_actions(state, rules)
 
@@ -120,7 +143,9 @@ def legal_actions(state: State, rules: Rules) -> Tuple[int, ...]:
 def _nonterminal_actions(state: State, rules: Rules) -> Tuple[int, ...]:
     occ = occupied(state)
     tried = state.tried_o if state.turn == O else state.tried_x
-    available = ((rules.hidden_mask & ~tried) | (~rules.hidden_mask & ~occ)) & FULL_MASK
+    available = ((rules.hidden_mask & ~tried) | (~rules.hidden_mask & ~occ)) & rules.spec.playable_mask
+    if state.move_no == 0 and not rules.spec.allow_hidden_opening:
+        available &= ~rules.hidden_mask
     return _ACTIONS[available]
 
 
@@ -165,7 +190,7 @@ def _apply_legal_action(state: State, rules: Rules, move: int) -> State:
 def information_key(state: State, rules: Rules, player: int | None = None) -> str:
     player = state.turn if player is None else player
     obs = state.obs_o if player == O else state.obs_x
-    return f"{player}|{rules.start_player}|{rules.hidden_mask}|{obs}"
+    return f"{player}|{rules.variant_id}|{rules.start_player}|{rules.hidden_mask}|{obs}"
 
 
 @dataclass
@@ -282,7 +307,7 @@ def build_sequence_game_python(rules: Rules, node_limit: int = 0) -> SequenceGam
             next_report += 1_000_000
         if node_limit and histories > node_limit:
             raise RuntimeError(f"Node limit {node_limit:,} exceeded. This guard prevents an accidental full-memory solve; rerun with a larger limit or 0 only when you intend to build the complete game.")
-        u = utility_o(state)
+        u = utility_o(state, rules)
         if u is not None:
             terminals += 1
             if u != 0.0:
@@ -487,6 +512,7 @@ def parse_hidden(text: str) -> Tuple[int, ...]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--hidden", type=parse_hidden, required=True, help="1-based mystery cells, e.g. 2,4")
+    parser.add_argument("--variant", choices=tuple(VARIANTS), default="standard")
     parser.add_argument("--start", choices=("O", "X"), default="O")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--enumerator", choices=("auto", "native", "python"), default="auto")
@@ -505,7 +531,7 @@ def main() -> None:
     args = parser.parse_args()
 
     hidden_mask = sum(bit(move) for move in args.hidden)
-    rules = Rules(hidden_mask=hidden_mask, start_player=O if args.start == "O" else X)
+    rules = Rules(hidden_mask=hidden_mask, start_player=O if args.start == "O" else X, variant_id=args.variant)
     total_started = time.perf_counter()
     _log(f"Build start: hidden={tuple(m + 1 for m in args.hidden)} start={args.start} enumerator={args.enumerator}")
     game = build_sequence_game(rules, node_limit=args.node_limit, backend=args.enumerator)
@@ -522,7 +548,8 @@ def main() -> None:
     gap = max(0.0, upper_o - lower_o); value = 0.5 * (lower_o + upper_o)
     artifact = {
         "schema": 1, "solver": getattr(result, "solver_backend", "HiGHS"), "game": "Tic-Tac-Nope",
-        "informationModel": INFORMATION_MODEL, "hidden": [move + 1 for move in args.hidden],
+        "informationModel": INFORMATION_MODEL, "variant": args.variant, "rulesVersion": rules.spec.rules_version,
+        "hidden": [move + 1 for move in args.hidden],
         "hiddenMask": hidden_mask, "startPlayer": args.start, "valueO": value,
         "lowerBoundO": lower_o, "upperBoundO": upper_o, "dualityGap": gap,
         "numericallySolved": bool(result.success), "certificate": certificate,

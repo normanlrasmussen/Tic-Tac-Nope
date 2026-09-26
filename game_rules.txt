@@ -1,7 +1,35 @@
-This is Tic-tac-toe with a twist.
-2 Players take turns chosing tiles for X and O. 
-Same rules apply for winning. 
-However the twist is that there are unknown tiles. 
-Each player can only play in these tiles once. 
-The first, player to play in one of these tiles gets. 
-So if P1 plays in the hidden middle, and then P2 does it will only count for P1's place
+Tic-Tac-Nope variants
+====================
+
+All variants use alternating O/X turns and public mystery-cell locations.
+Each player may attempt each mystery cell once. A mystery attempt claims the
+cell only when it is unoccupied, always consumes the turn, and does not reveal
+success or failure to the acting player. The opponent sees only that a mystery
+action occurred.
+
+standard - Hidden Tiles
+-----------------------
+The nine-cell board uses ordinary three-in-a-row winning lines. A mystery cell
+may be attempted on the first move. A full board without a winner is a draw.
+
+no-hidden-opening - No Hidden Opening Move
+-------------------------------------------
+This is the standard game except the first move must be a visible cell. Hidden
+cells become legal from the second move. At least one visible cell is required.
+
+no-center-ring - No Center
+--------------------------
+Cell 5 does not exist and cannot be occupied or hidden. The playable cells form
+the circular order 4, 1, 2, 3, 6, 9, 8, 7, then back to 4. Any three
+consecutive cells in this cycle win, including 4-1-2 and 7-4-1. Hidden cells
+may be attempted on the first move. A full perimeter without a winning triple
+is a draw.
+
+no-center-ring-pair-loss - No Center, Pairs Lose
+------------------------------------------------
+This uses the same eight-cell perimeter and hidden-attempt rules as no-center.
+Three-in-a-row has no special meaning. Two cells are adjacent when they are
+consecutive in the circular perimeter, including 7-4 and 4-1. The first
+player whose successful move creates an adjacent pair immediately loses. A
+failed mystery attempt cannot create a pair. A full perimeter without a pair
+is a draw.

@@ -116,6 +116,9 @@ struct Payoff64 { std::uint64_t row; std::uint64_t col; std::int64_t value; };
 struct Game {
     const Control* control;
     std::uint16_t hidden;
+    std::uint16_t playable;
+    bool allow_hidden_opening;
+    int objective;
     std::uint64_t node_limit;
     std::uint64_t histories = 0;
     std::uint64_t terminals = 0;
@@ -131,16 +134,34 @@ struct Game {
     std::vector<u128> pending_pos64;
     std::vector<u128> pending_neg64;
     std::array<bool, 512> wins{};
+    std::array<bool, 512> losing_pairs{};
     std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
     std::uint64_t next_progress = 10000000;
 
-    explicit Game(std::uint16_t hidden_mask, std::uint64_t limit, const Control* run_control)
-        : control(run_control), hidden(hidden_mask), node_limit(limit) {
+    explicit Game(std::uint16_t hidden_mask, std::uint16_t playable_mask, bool allow_opening,
+                  int terminal_objective, std::uint64_t limit, const Control* run_control)
+        : control(run_control), hidden(hidden_mask), playable(playable_mask),
+          allow_hidden_opening(allow_opening), objective(terminal_objective), node_limit(limit) {
         pending_pos32.reserve(PAYOFF_CHUNK / 2);
         pending_neg32.reserve(PAYOFF_CHUNK / 2);
-        constexpr std::array<std::uint16_t, 8> patterns = {0x007,0x038,0x1c0,0x049,0x092,0x124,0x111,0x054};
+        constexpr std::array<std::uint16_t, 8> standard = {0x007,0x038,0x1c0,0x049,0x092,0x124,0x111,0x054};
+        constexpr std::array<int, 8> ring = {3,0,1,2,5,8,7,6};
         for (std::size_t mask = 0; mask < wins.size(); ++mask) {
-            for (std::uint16_t pattern : patterns) if ((mask & pattern) == pattern) { wins[mask] = true; break; }
+            for (int i = 0; i < 8; ++i) {
+                std::uint16_t pattern = 0;
+                if (objective == 1) {
+                    for (int j = 0; j < 3; ++j) pattern |= static_cast<std::uint16_t>(1u << ring[(i + j) % 8]);
+                } else if (objective == 2) {
+                    pattern = static_cast<std::uint16_t>((1u << ring[i]) | (1u << ring[(i + 1) % 8]));
+                } else {
+                    pattern = standard[i];
+                }
+                if ((mask & pattern) == pattern) {
+                    if (objective == 2) losing_pairs[mask] = true;
+                    else wins[mask] = true;
+                    break;
+                }
+            }
         }
     }
 
@@ -277,22 +298,24 @@ struct Game {
     }
 
     void visit(std::uint16_t o_mask, std::uint16_t x_mask, std::uint16_t tried_o, std::uint16_t tried_x,
-               int actor, u128 obs_o, u128 obs_x, std::uint64_t seq_o, std::uint64_t seq_x) {
+               int actor, int move_no, u128 obs_o, u128 obs_x, std::uint64_t seq_o, std::uint64_t seq_x) {
         checked_increment(histories, "History count exceeds uint64 capacity");
         if ((histories & 65535) == 1 && control && control->cancelled.load(std::memory_order_relaxed)) throw std::runtime_error("Native enumeration cancelled");
         if (node_limit && histories > node_limit) throw std::runtime_error("Node limit " + std::to_string(node_limit) + " exceeded. This guard prevents an accidental full-memory solve; rerun with a larger limit or 0 only when you intend to build the complete game.");
         if (histories >= next_progress) progress();
 
         const std::uint16_t occ = o_mask | x_mask;
-        const bool o_win = wins[o_mask], x_win = wins[x_mask];
-        if (o_win || x_win || occ == FULL_MASK) {
+        const bool o_win = objective == 2 ? losing_pairs[o_mask] : wins[o_mask];
+        const bool x_win = objective == 2 ? losing_pairs[x_mask] : wins[x_mask];
+        if (o_win || x_win || (occ & playable) == playable) {
             checked_increment(terminals, "Terminal count exceeds uint64 capacity");
-            if (o_win || x_win) add_payoff(seq_o, seq_x, o_win ? 1 : -1);
+            if (o_win || x_win) add_payoff(seq_o, seq_x, objective == 2 ? (o_win ? -1 : 1) : (o_win ? 1 : -1));
             return;
         }
 
         const std::uint16_t tried = actor == O ? tried_o : tried_x;
-        const std::uint16_t actions = ((hidden & ~tried) | (~hidden & ~occ)) & FULL_MASK;
+        std::uint16_t actions = ((hidden & ~tried) | (~hidden & ~occ)) & playable;
+        if (move_no == 0 && !allow_hidden_opening) actions = static_cast<std::uint16_t>(actions & ~hidden);
         Catalog& catalog = actor == O ? o : x;
         const std::uint64_t first = catalog.register_info(actor == O ? obs_o : obs_x, actor == O ? seq_o : seq_x, actions);
         if ((obs_o >> 123) || (obs_x >> 123)) throw std::overflow_error("Observation history exceeds the lossless 128-bit encoding");
@@ -313,7 +336,7 @@ struct Game {
                 if (actor == O) child_o |= cell; else child_x |= cell;
                 token_o = token_x = static_cast<unsigned>((actor == X ? 11 : 20) + move);
             }
-            visit(child_o, child_x, child_to, child_tx, actor == O ? X : O,
+            visit(child_o, child_x, child_to, child_tx, actor == O ? X : O, move_no + 1,
                   shifted_o | token_o, shifted_x | token_x,
                   actor == O ? child_sequence : seq_o, actor == X ? child_sequence : seq_x);
             ++child_sequence;
@@ -428,20 +451,22 @@ int ttn_best_response_plan(std::uint64_t n_infos, std::uint64_t n_sequences, con
 
 const char* ttn_error() noexcept { return last_error; }
 
-void* ttn_build(std::uint16_t hidden, int start, std::uint16_t o_mask, std::uint16_t x_mask,
-                std::uint16_t tried_o, std::uint16_t tried_x, int turn,
+void* ttn_build(std::uint16_t hidden, std::uint16_t playable, int allow_opening, int objective, int start,
+                std::uint16_t o_mask, std::uint16_t x_mask,
+                std::uint16_t tried_o, std::uint16_t tried_x, int turn, int move_no,
                 std::uint64_t obs_o_lo, std::uint64_t obs_o_hi,
                 std::uint64_t obs_x_lo, std::uint64_t obs_x_hi,
                 std::uint64_t node_limit, void* control) noexcept {
     last_error[0]='\0';
     try {
         if (!payoff_merge_self_check()) throw std::runtime_error("Native payoff merge self-check failed");
-        if (((hidden|o_mask|x_mask|tried_o|tried_x)&~FULL_MASK)!=0) throw std::invalid_argument("Board and tried masks must fit the nine-cell board");
+        if (((hidden|o_mask|x_mask|tried_o|tried_x)&~FULL_MASK)!=0 || (playable & ~FULL_MASK)!=0 || (hidden & ~playable)!=0) throw std::invalid_argument("Board masks do not fit the configured playable board");
         if ((start!=O&&start!=X)||(turn!=O&&turn!=X)) throw std::invalid_argument("Starting player and turn must be O (2) or X (1)");
+        if (objective < 0 || objective > 2) throw std::invalid_argument("Unknown terminal objective");
         const u128 obs_o=(static_cast<u128>(obs_o_hi)<<64)|obs_o_lo;
         const u128 obs_x=(static_cast<u128>(obs_x_hi)<<64)|obs_x_lo;
-        auto game=std::make_unique<Game>(hidden,node_limit,static_cast<Control*>(control));
-        game->visit(o_mask,x_mask,tried_o,tried_x,turn,obs_o,obs_x,0,0);
+        auto game=std::make_unique<Game>(hidden, playable, allow_opening != 0, objective, node_limit, static_cast<Control*>(control));
+        game->visit(o_mask,x_mask,tried_o,tried_x,turn,move_no,obs_o,obs_x,0,0);
         game->finalize_payoff();
         game->o.release_index(); game->x.release_index();
         return game.release();

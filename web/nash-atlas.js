@@ -5,8 +5,6 @@
   if (!T) return;
 
   const PAGE_ID = 'nash-data';
-  const MANIFEST_URL = './equilibria/manifest.json';
-  const SYMMETRY_URL = './equilibria/symmetry-map.json';
   const ROLE_FIRST = 'first';
   const ROLE_SECOND = 'second';
   const VIEW_CANONICAL = 'canonical';
@@ -19,6 +17,7 @@
   let selectedRole = ROLE_FIRST;
   let selectedView = VIEW_CANONICAL;
   let selectedFogCount = 'all';
+  let loadedVariant = null;
 
   function injectStyles() {
     if (document.getElementById('nash-atlas-styles')) return;
@@ -101,9 +100,11 @@
     const grouped = new Map();
     for (const entry of entries) {
       const mask = Number(entry.hiddenMask);
+      const variant = entry.variant || 'standard';
       if (!Number.isInteger(mask)) continue;
-      if (!grouped.has(mask)) grouped.set(mask, { mask, hidden: Array.isArray(entry.hidden) ? entry.hidden.map(Number) : hiddenFromMask(mask).map((m) => m + 1), O: null, X: null });
-      const pair = grouped.get(mask);
+      const key = `${variant}|${mask}`;
+      if (!grouped.has(key)) grouped.set(key, { mask, variant, hidden: Array.isArray(entry.hidden) ? entry.hidden.map(Number) : hiddenFromMask(mask).map((m) => m + 1), O: null, X: null });
+      const pair = grouped.get(key);
       if (entry.startPlayer === 'O') pair.O = entry;
       if (entry.startPlayer === 'X') pair.X = entry;
     }
@@ -235,17 +236,22 @@
   }
 
   async function loadData() {
-    if (loadPromise) return loadPromise;
+    const variant = global.TTNActiveVariant || 'standard';
+    if (loadPromise && loadedVariant === variant) return loadPromise;
+    loadedVariant = variant;
+    loadPromise = null;
     loadPromise = (async () => {
-      const [manifestResponse, symmetryResponse] = await Promise.all([
-        fetch(MANIFEST_URL, { cache: 'no-cache' }),
-        fetch(SYMMETRY_URL, { cache: 'force-cache' })
-      ]);
+      const manifestUrl = `./equilibria/${variant}/manifest.json`;
+      const symmetryUrl = `./equilibria/${variant}/symmetry-map.json`;
+      let manifestResponse = await fetch(manifestUrl, { cache: 'no-cache' });
+      if (!manifestResponse.ok && variant === 'standard') manifestResponse = await fetch('./equilibria/manifest.json', { cache: 'no-cache' });
+      let symmetryResponse = await fetch(symmetryUrl, { cache: 'force-cache' });
+      if (!symmetryResponse.ok && variant === 'standard') symmetryResponse = await fetch('./equilibria/symmetry-map.json', { cache: 'force-cache' });
       if (!manifestResponse.ok) throw new Error(`manifest HTTP ${manifestResponse.status}`);
       const manifest = await manifestResponse.json();
       if (symmetryResponse.ok) symmetryMap = await symmetryResponse.json();
       const entries = (Array.isArray(manifest.artifacts) ? manifest.artifacts : [])
-        .filter((entry) => entry?.informationModel === T.INFORMATION_MODEL && entry?.numericallySolved);
+        .filter((entry) => entry?.informationModel === T.INFORMATION_MODEL && entry?.numericallySolved && (entry.variant || 'standard') === variant);
       pairs = pairFromEntries(entries);
       return pairs;
     })();
@@ -352,7 +358,8 @@
     document.querySelectorAll('.page').forEach((page) => page.classList.toggle('active', page.id === 'page-nash-data'));
     document.querySelectorAll('.topbar .nav-btn').forEach((button) => button.classList.toggle('active', button.dataset.page === 'nash'));
     document.querySelectorAll('.research-tabs [data-page]').forEach((button) => button.classList.toggle('active', button.dataset.page === PAGE_ID));
-    try { history.replaceState(null, '', '#nash-data'); } catch (_) { /* no-op */ }
+    const variant = global.TTNActiveVariant || 'standard';
+    try { history.replaceState(null, '', `#nash-data?variant=${encodeURIComponent(variant)}`); } catch (_) { /* no-op */ }
     refresh();
     global.scrollTo({ top: 0, behavior: 'smooth' });
   }

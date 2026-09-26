@@ -4,14 +4,13 @@
 This driver intentionally computes one representative of each D4 board-symmetry
 class, for both possible starting players. It stores:
 
-  web/equilibria/exact/mask-<canonical>-<O|X>.json
-  web/equilibria/mccfr/mask-<canonical>-<O|X>.json
-  web/equilibria/symmetry-map.json
-  web/equilibria/manifest.json
+  web/equilibria/<variant>/exact/mask-<canonical>-<O|X>.json
+  web/equilibria/<variant>/mccfr/mask-<canonical>-<O|X>.json
+  web/equilibria/<variant>/symmetry-map.json
+  web/equilibria/<variant>/manifest.json
 
-Default scope: every mystery-cell set of size >= 2.
-That is 502 raw masks, 98 geometric symmetry classes, and 196 configurations
-once the two starting players are included.
+Default scope: every valid mystery-cell set of size >= 2 for the selected
+variant and topology, with both starting players.
 
 The run is resumable. Exact artifacts are reused only when they declare the
 current information model; stale artifacts from older game semantics are never
@@ -29,10 +28,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
+from variant_rules import VARIANTS, variant_spec
 
 ROOT = Path(__file__).resolve().parent
 WEB_EQ = ROOT / "web" / "equilibria"
-EXACT_DIR = WEB_EQ / "exact"
+EXACT_DIR = WEB_EQ / "exact"  # legacy wrapper/test compatibility for standard artifacts
 MCCFR_DIR = WEB_EQ / "mccfr"
 INFORMATION_MODEL = "hidden-attempt-location-no-result-v2"
 _metadata_cache: Dict[Path, tuple] = {}
@@ -99,8 +99,12 @@ def canonicalize(mask: int) -> Tuple[int, str, Tuple[int, ...], Tuple[int, ...]]
     return canonical_mask, name, transform, inverse_transform(transform)
 
 
-def raw_masks(mode: str) -> Iterable[int]:
+def raw_masks(mode: str, playable_mask: int, allow_hidden_opening: bool = True) -> Iterable[int]:
     for mask in range(1, 1 << 9):
+        if mask & ~playable_mask:
+            continue
+        if not allow_hidden_opening and mask == playable_mask:
+            continue
         count = mask.bit_count()
         if mode == "two-hidden":
             if count == 2:
@@ -113,10 +117,11 @@ def mask_cells(mask: int) -> List[int]:
     return [i + 1 for i in range(9) if mask & (1 << i)]
 
 
-def write_symmetry_map(mode: str) -> Tuple[List[int], Dict[str, dict]]:
+def write_symmetry_map(mode: str, variant: str) -> Tuple[List[int], Dict[str, dict]]:
+    spec = variant_spec(variant)
     mapping: Dict[str, dict] = {}
     canonical_masks = set()
-    for mask in raw_masks(mode):
+    for mask in raw_masks(mode, spec.playable_mask, spec.allow_hidden_opening):
         canonical, name, to_canonical, from_canonical = canonicalize(mask)
         canonical_masks.add(canonical)
         mapping[str(mask)] = {
@@ -126,14 +131,9 @@ def write_symmetry_map(mode: str) -> Tuple[List[int], Dict[str, dict]]:
             "fromCanonical": list(from_canonical),
         }
 
-    expected = 8 if mode == "two-hidden" else 98
-    if len(canonical_masks) != expected:
-        raise RuntimeError(
-            f"Symmetry enumeration produced {len(canonical_masks)} classes; expected {expected}."
-        )
-
     payload = {
         "schema": 1,
+        "variant": variant,
         "mode": mode,
         "rawMaskCount": len(mapping),
         "canonicalMaskCount": len(canonical_masks),
@@ -141,7 +141,8 @@ def write_symmetry_map(mode: str) -> Tuple[List[int], Dict[str, dict]]:
         "masks": mapping,
     }
     WEB_EQ.mkdir(parents=True, exist_ok=True)
-    (WEB_EQ / "symmetry-map.json").write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+    (WEB_EQ / variant / "symmetry-map.json").parent.mkdir(parents=True, exist_ok=True)
+    (WEB_EQ / variant / "symmetry-map.json").write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
     return sorted(canonical_masks), mapping
 
 
@@ -150,8 +151,8 @@ def run_command(command: List[str]) -> None:
     subprocess.run(command, cwd=ROOT, check=True)
 
 
-def solve_exact(mask: int, start: str, node_limit: int, force: bool) -> Path:
-    out = EXACT_DIR / f"mask-{mask}-{start}.json"
+def solve_exact(mask: int, start: str, variant: str, node_limit: int, force: bool) -> Path:
+    out = WEB_EQ / variant / "exact" / f"mask-{mask}-{start}.json"
     if out.exists() and not force:
         try:
             existing = json.loads(out.read_text(encoding="utf-8"))
@@ -167,6 +168,7 @@ def solve_exact(mask: int, start: str, node_limit: int, force: bool) -> Path:
         str(ROOT / "sequence_form_lp.py"),
         "--hidden", cells,
         "--start", start,
+        "--variant", variant,
         "--output", str(out),
     ]
     if node_limit:
@@ -175,8 +177,8 @@ def solve_exact(mask: int, start: str, node_limit: int, force: bool) -> Path:
     return out
 
 
-def solve_mccfr(mask: int, start: str, iterations: int, seed: int, force: bool) -> Path:
-    out = MCCFR_DIR / f"mask-{mask}-{start}.json"
+def solve_mccfr(mask: int, start: str, variant: str, iterations: int, seed: int, force: bool) -> Path:
+    out = WEB_EQ / variant / "mccfr" / f"mask-{mask}-{start}.json"
     if out.exists() and not force:
         try:
             existing = json.loads(out.read_text(encoding="utf-8"))
@@ -198,6 +200,7 @@ def solve_mccfr(mask: int, start: str, iterations: int, seed: int, force: bool) 
         str(ROOT / "precompute_mccfr.js"),
         "--hidden", cells,
         "--start", start,
+        "--variant", variant,
         "--iterations", str(iterations),
         "--seed", str(seed),
         "--output", str(out),
@@ -218,6 +221,7 @@ def artifact_metadata(path: Path) -> dict:
     result = {
         "file": path.relative_to(WEB_EQ).as_posix(),
         "informationModel": data.get("informationModel"),
+        "variant": data.get("variant", "standard"),
         "hiddenMask": data["hiddenMask"],
         "hidden": data["hidden"],
         "startPlayer": data["startPlayer"],
@@ -239,14 +243,16 @@ def artifact_metadata(path: Path) -> dict:
     return dict(result)
 
 
-def rebuild_manifest(mode: str) -> None:
-    exact_all = [artifact_metadata(p) for p in sorted(EXACT_DIR.glob("mask-*-?.json"))]
-    mccfr_all = [artifact_metadata(p) for p in sorted(MCCFR_DIR.glob("mask-*-?.json"))]
+def rebuild_manifest(mode: str, variant: str) -> None:
+    root = WEB_EQ / variant
+    exact_all = [artifact_metadata(p) for p in sorted((root / "exact").glob("mask-*-?.json"))]
+    mccfr_all = [artifact_metadata(p) for p in sorted((root / "mccfr").glob("mask-*-?.json"))]
     exact = [item for item in exact_all if item.get("informationModel") == INFORMATION_MODEL]
     mccfr = [item for item in mccfr_all if item.get("informationModel") == INFORMATION_MODEL]
     payload = {
         "schema": 3,
         "mode": mode,
+        "variant": variant,
         "informationModel": INFORMATION_MODEL,
         # Backward-compatible name used by the current exact-policy website loader.
         "artifacts": exact,
@@ -254,8 +260,8 @@ def rebuild_manifest(mode: str) -> None:
         "mccfrArtifacts": mccfr,
         "symmetryMap": "symmetry-map.json",
     }
-    WEB_EQ.mkdir(parents=True, exist_ok=True)
-    (WEB_EQ / "manifest.json").write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "manifest.json").write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
     stale_exact = len(exact_all) - len(exact)
     stale_mccfr = len(mccfr_all) - len(mccfr)
     print(
@@ -272,6 +278,7 @@ def main() -> None:
         default="all",
         help="all = every mask with >=2 hidden cells (196 canonical configs); two-hidden = 16 configs",
     )
+    parser.add_argument("--variant", choices=tuple(VARIANTS), default="standard")
     parser.add_argument(
         "--solvers",
         choices=("both", "exact", "mccfr"),
@@ -305,13 +312,12 @@ def main() -> None:
         parser.error("Node.js is required for MCCFR export but `node` was not found on PATH.")
 
     print(f"[{datetime.now().astimezone().isoformat(timespec='seconds')}] Batch started", flush=True)
-    EXACT_DIR.mkdir(parents=True, exist_ok=True)
-    MCCFR_DIR.mkdir(parents=True, exist_ok=True)
-    canonical_masks, _ = write_symmetry_map(args.mode)
+    spec = variant_spec(args.variant)
+    canonical_masks, _ = write_symmetry_map(args.mode, args.variant)
     canonical_masks.sort(key=lambda mask: (mask.bit_count(), mask))
     configurations = [(mask, start) for mask in canonical_masks for start in ("O", "X")]
 
-    raw_count = 36 if args.mode == "two-hidden" else 502
+    raw_count = sum(1 for _ in raw_masks(args.mode, spec.playable_mask, spec.allow_hidden_opening))
     print(
         f"Scope: {raw_count} raw mystery masks -> {len(canonical_masks)} symmetry classes "
         f"-> {len(configurations)} start-player configurations."
@@ -330,21 +336,21 @@ def main() -> None:
         )
         try:
             if args.solvers in ("both", "exact"):
-                solve_exact(mask, start, args.node_limit, args.force)
-                rebuild_manifest(args.mode)
+                solve_exact(mask, start, args.variant, args.node_limit, args.force)
+                rebuild_manifest(args.mode, args.variant)
             if args.solvers in ("both", "mccfr"):
                 # Deterministic but distinct seed per configuration.
                 config_seed = (args.seed ^ mask ^ (2 if start == "O" else 1) << 12) & 0xFFFFFFFF
-                solve_mccfr(mask, start, args.mccfr_iterations, config_seed, args.force)
-                rebuild_manifest(args.mode)
+                solve_mccfr(mask, start, args.variant, args.mccfr_iterations, config_seed, args.force)
+                rebuild_manifest(args.mode, args.variant)
         except subprocess.CalledProcessError as error:
             failures.append({"mask": mask, "start": start, "returncode": error.returncode})
             print(f"FAILED mask={mask} start={start}: process exited {error.returncode}", file=sys.stderr)
-            rebuild_manifest(args.mode)
+            rebuild_manifest(args.mode, args.variant)
             if not args.keep_going:
                 raise
 
-    rebuild_manifest(args.mode)
+    rebuild_manifest(args.mode, args.variant)
     elapsed = time.time() - start_time
     print("=" * 72)
     print(f"[{datetime.now().astimezone().isoformat(timespec='seconds')}] "

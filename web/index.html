@@ -29,6 +29,12 @@
         <button class="nav-btn" data-page="analysis" data-nav-group="research">Lab</button>
         <button class="nav-btn" data-page="rules">Rules</button>
       </nav>
+      <div class="variant-nav" role="group" aria-label="Game variant">
+        <button class="variant-btn active" data-variant="standard">Hidden Tiles</button>
+        <button class="variant-btn" data-variant="no-hidden-opening">No Hidden Opening</button>
+        <button class="variant-btn" data-variant="no-center-ring">No Center</button>
+        <button class="variant-btn" data-variant="no-center-ring-pair-loss">Pairs Lose</button>
+      </div>
     </header>
 
     <main>
@@ -99,7 +105,9 @@
         <div id="ai-play-shell">
           <div class="play-layout theory-play-layout">
             <aside class="panel setup-panel">
-              <div class="panel-heading"><div><p class="kicker">GAME SETUP</p><h2>Configure the match</h2></div><span id="hidden-count-badge" class="pill">2 hidden</span></div>
+              <div class="panel-heading"><div><p class="kicker">GAME SETUP</p><h2 id="variant-title">Configure the match</h2></div><span id="hidden-count-badge" class="pill">2 hidden</span></div>
+              <label class="field-label" for="variant-select">Game variant</label>
+              <select id="variant-select" class="strategy-select"></select>
               <label class="field-label" for="ai-strategy">AI opponent</label>
               <select id="ai-strategy" class="strategy-select"></select>
               <div class="field-label row-label"><span>Turn order</span><small>you are O</small></div>

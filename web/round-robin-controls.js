@@ -6,12 +6,16 @@
   const solvers = new Map();
   const sleep = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+  function activeVariant() {
+    return window.TTNActiveVariant || 'standard';
+  }
+
   function hiddenMoves() {
     return [...document.querySelectorAll('#hidden-picker .picker-cell')]
       .flatMap((cell, i) => cell.classList.contains('selected') ? [i] : []);
   }
   function solverFor(rules) {
-    const key = `${rules.hiddenMask}|${rules.startPlayer}`;
+    const key = `${rules.variantId}|${rules.hiddenMask}|${rules.startPlayer}`;
     if (!solvers.has(key)) solvers.set(key, new T.OutcomeSamplingMCCFR(rules, 20260903));
     const solver = solvers.get(key);
     if (solver.iterations < 20000) solver.train(20000 - solver.iterations);
@@ -40,7 +44,7 @@
     let o = 0, draw = 0;
     for (let round = 0; round < rounds; round++) {
       for (const opener of [O, X]) {
-        const winner = play(oStrategy, xStrategy, T.makeRules(hidden, opener), rng);
+        const winner = play(oStrategy, xStrategy, T.makeRules(hidden, opener, activeVariant()), rng);
         if (winner === O) o++;
         else if (winner === 0) draw++;
       }
@@ -50,7 +54,7 @@
   }
   function exactLPAvailable(hidden) {
     if (typeof T.exactLPArtifactForRules !== 'function') return false;
-    return [O, X].every((opener) => Boolean(T.exactLPArtifactForRules(T.makeRules(hidden, opener))));
+    return [O, X].every((opener) => Boolean(T.exactLPArtifactForRules(T.makeRules(hidden, opener, activeVariant()))));
   }
   function install() {
     const button = document.getElementById('run-round-robin');
@@ -100,6 +104,10 @@
       } finally {
         button.disabled = input.disabled = false;
       }
+    });
+    document.addEventListener('ttn-variant-changed', () => {
+      solvers.clear();
+      root.innerHTML = '<p class="muted">Variant changed. Run the round robin again for the new rules.</p>';
     });
   }
   window.TTNRoundRobinControls = { install };

@@ -80,7 +80,7 @@
     const beliefSignature = beliefs.map((world) => T.stateKey(world)).sort().join('~');
     return [
       strategyId,
-      `${context.rules.hiddenMask}|${context.rules.startPlayer}`,
+      `${context.rules.variantId}|${context.rules.hiddenMask}|${context.rules.startPlayer}`,
       T.informationKey(context.state, context.rules, context.state.turn),
       beliefSignature,
       context.solver?.iterations || 0,
@@ -245,7 +245,8 @@
       return;
     }
     document.querySelectorAll('.page').forEach((page) => page.classList.toggle('active', page.id === 'page-simulate'));
-    try { history.replaceState(null, '', '#simulate'); } catch (_) { /* no-op */ }
+    const variant = global.TTNActiveVariant || 'standard';
+    try { history.replaceState(null, '', `#simulate?variant=${encodeURIComponent(variant)}`); } catch (_) { /* no-op */ }
   }
 
   function retirePositionLab() {
@@ -268,8 +269,9 @@
       button.addEventListener('click', redirectToStrategyArena, true);
     });
 
-    if ((global.location.hash || '').replace('#', '') === 'analysis') {
-      try { history.replaceState(null, '', '#simulate'); } catch (_) { /* no-op */ }
+    if ((global.location.hash || '').replace('#', '').split('?')[0] === 'analysis') {
+      const variant = global.TTNActiveVariant || 'standard';
+      try { history.replaceState(null, '', `#simulate?variant=${encodeURIComponent(variant)}`); } catch (_) { /* no-op */ }
     }
   }
 
