@@ -42,6 +42,7 @@ def artifact_for(game):
     rx, lx, _ = lp.solve_max_player(game.x, game.o, -game.payoff.T.tocsr())
     po, px = compact_behavioral_policy(game.o, ro), compact_behavioral_policy(game.x, rx)
     return dict(schema=2, numericallySolved=True, informationModel=lp.INFORMATION_MODEL,
+                variant=game.rules.variant_id, rulesVersion=game.rules.spec.rules_version,
                 hiddenMask=game.rules.hidden_mask,
                 hidden=precompute.batch.mask_cells(game.rules.hidden_mask),
                 startPlayer='O' if game.rules.start_player == lp.O else 'X',
@@ -100,6 +101,45 @@ class ExactOptimizationTests(unittest.TestCase):
                                        A_eq=F, b_eq=f, bounds=(0,None), method='highs')
                     self.assertTrue(response.success)
                     self.assertAlmostEqual(response.fun, value, places=7)
+
+
+    def test_cache_identity_includes_full_game_configuration(self):
+        artifact = artifact_for(late_game(3, lp.O))
+        self.assertTrue(precompute.artifact_matches_configuration(artifact, 3, 'O', 'standard'))
+
+        wrong = dict(artifact)
+        wrong['rulesVersion'] = artifact['rulesVersion'] + 1
+        self.assertFalse(precompute.artifact_matches_configuration(wrong, 3, 'O', 'standard'))
+
+        wrong = dict(artifact)
+        wrong['hiddenMask'] = 5
+        self.assertFalse(precompute.artifact_matches_configuration(wrong, 3, 'O', 'standard'))
+
+        wrong = dict(artifact)
+        wrong['startPlayer'] = 'X'
+        self.assertFalse(precompute.artifact_matches_configuration(wrong, 3, 'O', 'standard'))
+
+        wrong = dict(artifact)
+        wrong['variant'] = 'no-hidden-opening'
+        self.assertFalse(precompute.artifact_matches_configuration(wrong, 3, 'O', 'standard'))
+
+    def test_mccfr_cache_identity_includes_training_parameters(self):
+        artifact = dict(
+            schema=1, solver='OutcomeSamplingMCCFR',
+            informationModel=lp.INFORMATION_MODEL,
+            variant='standard', rulesVersion=1, hiddenMask=3, startPlayer='O',
+            iterations=1000, seed=123, exploration=precompute.batch.MCCFR_EXPLORATION,
+        )
+        matches = precompute.batch.mccfr_artifact_matches_configuration
+        self.assertTrue(matches(artifact, 3, 'O', 'standard', 1000, 123))
+        for field, value in (
+            ('rulesVersion', 2), ('hiddenMask', 5), ('startPlayer', 'X'),
+            ('variant', 'no-hidden-opening'), ('seed', 124), ('exploration', 0.5),
+        ):
+            wrong = dict(artifact)
+            wrong[field] = value
+            self.assertFalse(matches(wrong, 3, 'O', 'standard', 1000, 123), field)
+        self.assertFalse(matches(artifact, 3, 'O', 'standard', 1001, 123))
 
     def test_node_guard(self):
         with self.assertRaisesRegex(RuntimeError, 'Node limit 10 exceeded'):
