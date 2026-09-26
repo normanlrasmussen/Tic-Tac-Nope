@@ -2,7 +2,7 @@
 """One-command precompute entrypoint.
 
 Uses precompute_all.py for symmetry enumeration / resume / manifests, but routes
-exact solves through the compact support-pruned sequence-form exporter.
+exact solves through the compact sequence-form exporter with explicit behavioral completion.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from pathlib import Path
 
 import precompute_all as batch
 from sequence_form_lp import INFORMATION_MODEL
+from variant_rules import variant_spec
 
 _lp_backend = "auto"
 
@@ -106,11 +107,39 @@ def keep_awake() -> None:
     os.execve(inhibitor, command, environment)
 
 
+LEGACY_STANDARD_RULES_VERSION = 1
+
+
 def artifact_matches_information_model(artifact: dict) -> bool:
     return (
         artifact.get("schema") == 2
         and artifact.get("numericallySolved") is True
         and artifact.get("informationModel") == INFORMATION_MODEL
+    )
+
+
+def artifact_rules_version(artifact: dict) -> int | None:
+    value = artifact.get("rulesVersion")
+    if value is None and artifact.get("variant", "standard") == "standard":
+        return LEGACY_STANDARD_RULES_VERSION
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def artifact_matches_configuration(artifact: dict, mask: int, start: str, variant: str) -> bool:
+    spec = variant_spec(variant)
+    try:
+        hidden_mask = int(artifact.get("hiddenMask"))
+    except (TypeError, ValueError):
+        return False
+    return (
+        artifact_matches_information_model(artifact)
+        and artifact.get("variant", "standard") == variant
+        and artifact_rules_version(artifact) == spec.rules_version
+        and hidden_mask == int(mask)
+        and artifact.get("startPlayer") == start
     )
 
 
@@ -135,14 +164,14 @@ def solve_exact_compact(mask: int, start: str, variant_or_node_limit, node_limit
             existing = json.loads(out.read_text(encoding="utf-8"))
         except (ValueError, TypeError, OSError):
             existing = None
-        if isinstance(existing, dict) and artifact_matches_information_model(existing):
+        if isinstance(existing, dict) and artifact_matches_configuration(existing, mask, start, variant):
             print(
                 f"SKIP exact  mask={mask:03d} start={start}  "
                 f"({out.name} is current; stored backend={existing.get('solver')!r})"
             )
             return out
         else:
-            print(f"STALE exact mask={mask:03d} start={start}  ({out.name} uses an older information model; recomputing)")
+            print(f"STALE exact mask={mask:03d} start={start}  ({out.name} does not match the current game configuration; recomputing)")
 
     cells = ",".join(map(str, batch.mask_cells(mask)))
     command = [
