@@ -8,6 +8,7 @@
   const NAME = 'Exact Nash (Sequence-Form LP)';
   const DETAIL_URL = './strategy-lp.html';
   const CERTIFICATE_TOLERANCE = 1e-7;
+  const LEGACY_STANDARD_RULES_VERSION = 1;
   const artifacts = new Map();
   let manifest = { artifacts: [] };
   let symmetryMap = { masks: {} };
@@ -23,7 +24,21 @@
 
   function configKey(mask, startPlayer, variant = 'standard') { return `${variant}|${Number(mask)}|${symbol(startPlayer)}`; }
 
-  function currentModelArtifact(value) {
+  function artifactVariant(value) {
+    return value?.variant || 'standard';
+  }
+
+  function artifactRulesVersion(value) {
+    const raw = value?.rulesVersion;
+    if (raw === undefined && artifactVariant(value) === 'standard') return LEGACY_STANDARD_RULES_VERSION;
+    const parsed = Number(raw);
+    return Number.isInteger(parsed) ? parsed : null;
+  }
+
+  function currentModelArtifact(value, expectedVariant = null) {
+    const variant = artifactVariant(value);
+    const requiredVariant = expectedVariant || variant;
+    const spec = T.VARIANTS[requiredVariant];
     const gap = Number(value?.dualityGap);
     const rawExploitabilityGap = value?.certificate?.exploitabilityGap;
     const exploitabilityGap = rawExploitabilityGap === undefined ? null : Number(rawExploitabilityGap);
@@ -32,6 +47,9 @@
       && value.schema === 2
       && value.numericallySolved === true
       && value.informationModel === T.INFORMATION_MODEL
+      && variant === requiredVariant
+      && spec
+      && artifactRulesVersion(value) === Number(spec.rulesVersion)
       && Number.isFinite(gap)
       && gap >= -CERTIFICATE_TOLERANCE
       && gap <= CERTIFICATE_TOLERANCE
@@ -44,6 +62,13 @@
       && typeof value.policy.O === 'object'
       && typeof value.policy.X === 'object'
     );
+  }
+
+  function zeroReachCompletion(artifact) {
+    const declared = artifact?.behavioralCompletion?.zeroParent;
+    if (declared === 'uniform') return 'uniform';
+    if (artifact?.schema === 2 && artifactVariant(artifact) === 'standard') return 'uniform';
+    return null;
   }
 
   function validTransform(value) {
@@ -134,7 +159,7 @@
     const symmetry = symmetryForMask(rules.hiddenMask);
     if (!symmetry) return null;
     const artifact = artifacts.get(configKey(symmetry.canonicalMask, rules.startPlayer, rules.variantId || 'standard')) || null;
-    return currentModelArtifact(artifact) ? artifact : null;
+    return currentModelArtifact(artifact, rules.variantId || 'standard') ? artifact : null;
   }
 
   function exactPolicy(state, rules) {
@@ -143,7 +168,7 @@
       throw new Error(`Exact Nash unavailable: no valid symmetry mapping for hidden mask ${rules.hiddenMask}.`);
     }
     const artifact = artifacts.get(configKey(symmetry.canonicalMask, rules.startPlayer, rules.variantId || 'standard')) || null;
-    if (!currentModelArtifact(artifact)) {
+    if (!currentModelArtifact(artifact, rules.variantId || 'standard')) {
       throw new Error(
         `Exact Nash unavailable: no certified LP artifact for mask ${symmetry.canonicalMask}, `
         + `start ${symbol(rules.startPlayer)}.`
@@ -151,17 +176,30 @@
     }
 
     const player = state.turn;
+    const playerSymbol = symbol(player);
     const key = canonicalInformationKey(state, rules, player, symmetry, !artifact.variant);
-    const table = artifact.policy[symbol(player)]?.[key];
-    if (!table || typeof table !== 'object') {
-      throw new Error(
-        `Exact Nash policy lookup failed for ${symbol(player)} at information set ${key}. `
-        + 'Refusing to substitute another policy.'
-      );
-    }
-
     const legal = T.legalActions(state, rules, player);
     if (!legal.length) throw new Error(`Exact Nash policy requested at terminal/no-action information set ${key}.`);
+
+    const table = artifact.policy[playerSymbol]?.[key];
+    if (!table || typeof table !== 'object') {
+      const counts = artifact.counts || {};
+      const stored = Number(counts[`storedInformationSets${playerSymbol}`]);
+      const totalInfos = Number(counts[`informationSets${playerSymbol}`]);
+      if (
+        zeroReachCompletion(artifact) === 'uniform'
+        && Number.isFinite(stored)
+        && Number.isFinite(totalInfos)
+        && stored < totalInfos
+      ) {
+        const probability = 1 / legal.length;
+        return legal.map((move) => ({ move, prob: probability }));
+      }
+      throw new Error(
+        `Exact Nash policy lookup failed for ${playerSymbol} at information set ${key}. `
+        + 'No certified zero-reach behavioral completion applies.'
+      );
+    }
 
     // Policies are sparse: an absent legal action means exact probability zero.
     // Stored entries themselves must be finite and nonnegative; malformed data is fatal.
@@ -308,7 +346,7 @@
           const result = await fetch(`./equilibria/${entry.file}`, { cache: 'no-store' });
           if (!result.ok) throw new Error(`HTTP ${result.status}`);
           const artifact = await result.json();
-          if (!currentModelArtifact(artifact)) {
+          if (!currentModelArtifact(artifact, variant)) {
             throw new Error('artifact is stale, uncertified, or failed certificate validation');
           }
           if (
@@ -356,7 +394,7 @@
       <pre class="strategy-doc-formula"><code>local:   max fᵀp  s.t. Ex=e, x≥0, Fᵀp≤Aᵀx\nsite:    raw I → canonical I → σ*(·|I) → raw action</code></pre>
       <h3>Theoretical guarantee</h3>
       <p>If the complete unabstracted game was encoded correctly and both LPs solved to optimality, the published realization plans are a minimax/Nash equilibrium up to numerical LP tolerance. Board rotations/reflections are exact game isomorphisms, so a canonical policy remains an equilibrium after the corresponding action and observation relabeling. The artifact records the O lower bound, O upper bound, duality gap, and information-model identifier.</p>
-      <p><strong>Availability rule.</strong> The website enables this strategy only when the selected mystery-cell configuration maps to a certified canonical artifact for the same starting player and information model. Missing policy keys, malformed probability mass, missing symmetry data, or failed certificates are hard errors. The site never substitutes random play, MCCFR, or another Nash strategy under the Exact Nash name.</p>
+      <p><strong>Availability rule.</strong> The website enables this strategy only when the selected mystery-cell configuration maps to a certified canonical artifact for the same variant, rules version, starting player, and information model. Sparse artifacts define omitted zero-own-reach information sets by a uniform behavioral completion; every other missing policy key, malformed probability mass, missing symmetry datum, or failed certificate is a hard error. The site never substitutes random play, MCCFR, or another Nash strategy under the Exact Nash name.</p>
       <p id="lp-online-status">Checking published exact-policy artifacts…</p>
       <p><a class="secondary-btn compact" href="${DETAIL_URL}">Full LP theory & guarantees</a></p>`;
     const closing = document.getElementById('strategy-interpretation');
