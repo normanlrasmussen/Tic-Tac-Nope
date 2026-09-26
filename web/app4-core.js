@@ -183,7 +183,7 @@
     variantId = nextVariant;
     window.TTNActiveVariant = variantId;
     const hashBase = window.location.hash.split('?')[0] || '#play';
-    history.replaceState(null, '', `${hashBase}?variant=${encodeURIComponent(variantId)}`);
+    window.history.replaceState(null, '', `${hashBase}?variant=${encodeURIComponent(variantId)}`);
     const spec = T.VARIANTS[variantId];
     for (const move of [...selectedHidden]) if (!(spec.playableMask & T.bit(move))) selectedHidden.delete(move);
     while (selectedHidden.size < 2) {
