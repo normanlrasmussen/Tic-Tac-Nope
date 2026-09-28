@@ -13,6 +13,7 @@
   let installed = false;
   let loadPromise = null;
   let pairs = [];
+  let publishedPairs = [];
   let symmetryMap = { masks: {} };
   let selectedRole = ROLE_FIRST;
   let selectedView = VIEW_CANONICAL;
@@ -44,7 +45,10 @@
       .atlas-mask{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.72rem;color:var(--muted,#6f6a61);white-space:nowrap}
       .atlas-card-body{display:grid;grid-template-columns:124px minmax(0,1fr);gap:16px;align-items:center}
       .atlas-board{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;width:124px}
+      .atlas-board.ring{padding:5px;border-radius:50%;background:radial-gradient(circle at center,transparent 0 22%,rgba(0,0,0,.10) 23% 24%,transparent 25% 100%);box-shadow:inset 0 0 0 1px rgba(0,0,0,.06)}
       .atlas-cell{aspect-ratio:1;display:grid;place-items:center;border:1px solid var(--line,#d8d1c4);border-radius:8px;font-size:.68rem;color:var(--muted,#6f6a61);background:rgba(255,255,255,.12)}
+      .atlas-board.ring .atlas-cell{border-radius:50%}
+      .atlas-cell.unavailable{visibility:hidden}
       .atlas-cell.hidden{background:rgba(0,0,0,.09);color:inherit;font-weight:900;outline:1px dashed rgba(0,0,0,.18);outline-offset:-4px}
       .atlas-value{font-size:clamp(2rem,5vw,3.2rem);line-height:.95;font-weight:850;letter-spacing:-.06em;font-variant-numeric:tabular-nums}
       .atlas-value-label{margin-top:6px;font-size:.78rem;color:var(--muted,#6f6a61);line-height:1.4}
@@ -81,8 +85,20 @@
     return Number.isFinite(n) ? n.toExponential(2) : '—';
   }
 
+  function activeVariantSpec() {
+    return T.VARIANTS[loadedVariant || global.TTNActiveVariant || 'standard'] || T.VARIANTS.standard;
+  }
+
+  function isRingVariant() {
+    return activeVariantSpec()?.topology === 'ring';
+  }
+
   function boardHtml(mask) {
+    const spec = activeVariantSpec();
     return Array.from({ length: 9 }, (_, move) => {
+      if (!(spec.playableMask & T.bit(move))) {
+        return '<span class="atlas-cell unavailable" aria-hidden="true"></span>';
+      }
       const hidden = Boolean(Number(mask) & T.bit(move));
       return `<span class="atlas-cell${hidden ? ' hidden' : ''}">${hidden ? '?' : move + 1}</span>`;
     }).join('');
@@ -107,6 +123,34 @@
       const pair = grouped.get(key);
       if (entry.startPlayer === 'O') pair.O = entry;
       if (entry.startPlayer === 'X') pair.X = entry;
+    }
+    return [...grouped.values()].sort((a, b) => a.hidden.length - b.hidden.length || a.mask - b.mask);
+  }
+
+  function canonicalMaskFor(mask) {
+    const mapped = Number(symmetryMap?.masks?.[String(mask)]?.canonicalMask);
+    return Number.isInteger(mapped) ? mapped : Number(mask);
+  }
+
+  function collapseCanonicalPairs(sourcePairs) {
+    const grouped = new Map();
+    for (const pair of sourcePairs) {
+      const canonicalMask = canonicalMaskFor(pair.mask);
+      if (!grouped.has(canonicalMask)) {
+        grouped.set(canonicalMask, {
+          mask: canonicalMask,
+          variant: pair.variant,
+          hidden: hiddenFromMask(canonicalMask).map((move) => move + 1),
+          O: null,
+          X: null,
+          sourceMasks: []
+        });
+      }
+      const canonicalPair = grouped.get(canonicalMask);
+      canonicalPair.sourceMasks.push(pair.mask);
+      const isCanonicalArtifact = Number(pair.mask) === canonicalMask;
+      if (pair.O && (isCanonicalArtifact || !canonicalPair.O)) canonicalPair.O = pair.O;
+      if (pair.X && (isCanonicalArtifact || !canonicalPair.X)) canonicalPair.X = pair.X;
     }
     return [...grouped.values()].sort((a, b) => a.hidden.length - b.hidden.length || a.mask - b.mask);
   }
@@ -172,7 +216,7 @@
     const root = document.getElementById('atlas-summary');
     if (!root) return;
     const canonicalCount = pairs.length;
-    const artifactCount = pairs.reduce((sum, pair) => sum + Boolean(pair.O) + Boolean(pair.X), 0);
+    const artifactCount = publishedPairs.reduce((sum, pair) => sum + Boolean(pair.O) + Boolean(pair.X), 0);
     const allRaw = new Set(pairs.flatMap((pair) => rawMasksForCanonical(pair.mask)));
     const maxGap = Math.max(...pairs.map((pair) => roleStats(pair).maxGap).filter(Number.isFinite), 0);
     root.innerHTML = `
@@ -205,7 +249,7 @@
             <span class="atlas-mask">mask ${record.displayMask}${sameAsCanonical ? '' : ` → ${record.canonicalMask}`}</span>
           </div>
           <div class="atlas-card-body">
-            <div class="atlas-board" aria-label="Fog cells ${hiddenLabel(record.displayMask)}">${boardHtml(record.displayMask)}</div>
+            <div class="atlas-board${isRingVariant() ? ' ring' : ''}" aria-label="Fog cells ${hiddenLabel(record.displayMask)}">${boardHtml(record.displayMask)}</div>
             <div>
               <div class="atlas-value">${fmtValue(value)}</div>
               <div class="atlas-value-label">${selectedRole === ROLE_FIRST ? 'First-player' : 'Second-player'} equilibrium expected utility · win +1 / draw 0 / loss −1</div>
@@ -245,14 +289,15 @@
       const symmetryUrl = `./equilibria/${variant}/symmetry-map.json`;
       let manifestResponse = await fetch(manifestUrl, { cache: 'no-cache' });
       if (!manifestResponse.ok && variant === 'standard') manifestResponse = await fetch('./equilibria/manifest.json', { cache: 'no-cache' });
-      let symmetryResponse = await fetch(symmetryUrl, { cache: 'force-cache' });
-      if (!symmetryResponse.ok && variant === 'standard') symmetryResponse = await fetch('./equilibria/symmetry-map.json', { cache: 'force-cache' });
+      let symmetryResponse = await fetch(symmetryUrl, { cache: 'no-cache' });
+      if (!symmetryResponse.ok && variant === 'standard') symmetryResponse = await fetch('./equilibria/symmetry-map.json', { cache: 'no-cache' });
       if (!manifestResponse.ok) throw new Error(`manifest HTTP ${manifestResponse.status}`);
       const manifest = await manifestResponse.json();
-      if (symmetryResponse.ok) symmetryMap = await symmetryResponse.json();
+      symmetryMap = symmetryResponse.ok ? await symmetryResponse.json() : { masks: {} };
       const entries = (Array.isArray(manifest.artifacts) ? manifest.artifacts : [])
         .filter((entry) => entry?.informationModel === T.INFORMATION_MODEL && entry?.numericallySolved && (entry.variant || 'standard') === variant);
-      pairs = pairFromEntries(entries);
+      publishedPairs = pairFromEntries(entries);
+      pairs = collapseCanonicalPairs(publishedPairs);
       return pairs;
     })();
     return loadPromise;
@@ -320,7 +365,7 @@
             <li>Each card comes from locally solved sequence-form LP artifacts for both O-start and X-start labelings.</li>
             <li>The duality gap measures the remaining numerical separation between the security lower and upper bounds.</li>
             <li>The O/X role mismatch checks that relabeling the symbols leaves the role-normalized value unchanged.</li>
-            <li>Rotations/reflections share a value only when the symmetry map identifies them as exact game isomorphisms.</li>
+            <li>Rotations/reflections share a value only when the symmetry map identifies them as exact game isomorphisms. For ring variants this includes every 45° perimeter rotation and reflection.</li>
           </ul>
         </article>
       </section>`;

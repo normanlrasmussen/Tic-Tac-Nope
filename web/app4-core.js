@@ -56,6 +56,13 @@
   }
   let variantId = variantFromLocation();
   window.TTNActiveVariant = variantId;
+
+  function syncTopologyUi(spec = T.VARIANTS[variantId]) {
+    document.documentElement.dataset.ttnTopology = spec?.topology || 'grid';
+    document.documentElement.dataset.ttnVariant = variantId;
+  }
+
+  syncTopologyUi();
   let humanStarts = true;
   let aiStrategy = 'belief';
   let decisionStrategy = 'belief';
@@ -185,6 +192,7 @@
     const hashBase = window.location.hash.split('?')[0] || '#play';
     window.history.replaceState(null, '', `${hashBase}?variant=${encodeURIComponent(variantId)}`);
     const spec = T.VARIANTS[variantId];
+    syncTopologyUi(spec);
     for (const move of [...selectedHidden]) if (!(spec.playableMask & T.bit(move))) selectedHidden.delete(move);
     while (selectedHidden.size < 2) {
       const candidate = Array.from({ length: 9 }, (_, move) => move).find((move) => (spec.playableMask & T.bit(move)) && !selectedHidden.has(move));

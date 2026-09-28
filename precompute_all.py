@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Precompute Tic-Tac-Nope equilibrium policies for every symmetry class.
 
-This driver intentionally computes one representative of each D4 board-symmetry
-class, for both possible starting players. It stores:
+This driver computes one representative of each exact board-symmetry class for
+the selected topology: D4 for the 3x3 grid and D8 for the eight-cell ring. It
+stores:
 
   web/equilibria/<variant>/exact/mask-<canonical>-<O|X>.json
   web/equilibria/<variant>/mccfr/mask-<canonical>-<O|X>.json
@@ -28,7 +29,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
-from variant_rules import VARIANTS, variant_spec
+from variant_rules import RING, VARIANTS, variant_spec
 
 ROOT = Path(__file__).resolve().parent
 WEB_EQ = ROOT / "web" / "equilibria"
@@ -132,6 +133,39 @@ TRANSFORM_NAMES = (
 )
 TRANSFORMS: Dict[str, Tuple[int, ...]] = {name: make_transform(name) for name in TRANSFORM_NAMES}
 
+# The no-center variants are games on an eight-cell cycle, not on a square grid.
+# Their exact automorphism group is D8: eight rotations (45-degree ring steps)
+# and eight reflections. Cell index 4 (display cell 5) remains fixed/absent.
+RING_TRANSFORM_NAMES = (
+    "id", "r45", "r90", "r135", "r180", "r225", "r270", "r315",
+    "mirror", "mirror_r45", "mirror_r90", "mirror_r135",
+    "mirror_r180", "mirror_r225", "mirror_r270", "mirror_r315",
+)
+
+
+def make_ring_transform(step: int, reflected: bool = False) -> Tuple[int, ...]:
+    out = list(range(9))
+    for position, old in enumerate(RING):
+        new_position = (step - position) % len(RING) if reflected else (position + step) % len(RING)
+        out[old] = RING[new_position]
+    out[4] = 4
+    return tuple(out)
+
+
+RING_TRANSFORMS: Dict[str, Tuple[int, ...]] = {}
+for step, name in enumerate(RING_TRANSFORM_NAMES[:8]):
+    RING_TRANSFORMS[name] = make_ring_transform(step)
+for step, name in enumerate(RING_TRANSFORM_NAMES[8:]):
+    RING_TRANSFORMS[name] = make_ring_transform(step, reflected=True)
+
+
+def symmetry_transforms(topology: str) -> Dict[str, Tuple[int, ...]]:
+    if topology == "ring":
+        return RING_TRANSFORMS
+    if topology == "grid":
+        return TRANSFORMS
+    raise ValueError(f"Unsupported board topology: {topology}")
+
 
 def transform_mask(mask: int, transform: Tuple[int, ...]) -> int:
     result = 0
@@ -148,10 +182,13 @@ def inverse_transform(transform: Tuple[int, ...]) -> Tuple[int, ...]:
     return tuple(inverse)
 
 
-def canonicalize(mask: int) -> Tuple[int, str, Tuple[int, ...], Tuple[int, ...]]:
+def canonicalize(
+    mask: int,
+    transforms: Dict[str, Tuple[int, ...]] | None = None,
+) -> Tuple[int, str, Tuple[int, ...], Tuple[int, ...]]:
+    active_transforms = TRANSFORMS if transforms is None else transforms
     choices = []
-    for name in TRANSFORM_NAMES:
-        transform = TRANSFORMS[name]
+    for name, transform in active_transforms.items():
         choices.append((transform_mask(mask, transform), name, transform))
     canonical_mask, name, transform = min(choices, key=lambda item: (item[0], item[1]))
     return canonical_mask, name, transform, inverse_transform(transform)
@@ -177,10 +214,11 @@ def mask_cells(mask: int) -> List[int]:
 
 def write_symmetry_map(mode: str, variant: str) -> Tuple[List[int], Dict[str, dict]]:
     spec = variant_spec(variant)
+    transforms = symmetry_transforms(spec.topology)
     mapping: Dict[str, dict] = {}
     canonical_masks = set()
     for mask in raw_masks(mode, spec.playable_mask, spec.allow_hidden_opening):
-        canonical, name, to_canonical, from_canonical = canonicalize(mask)
+        canonical, name, to_canonical, from_canonical = canonicalize(mask, transforms)
         canonical_masks.add(canonical)
         mapping[str(mask)] = {
             "canonicalMask": canonical,
@@ -195,7 +233,7 @@ def write_symmetry_map(mode: str, variant: str) -> Tuple[List[int], Dict[str, di
         "mode": mode,
         "rawMaskCount": len(mapping),
         "canonicalMaskCount": len(canonical_masks),
-        "transforms": {name: list(TRANSFORMS[name]) for name in TRANSFORM_NAMES},
+        "transforms": {name: list(transform) for name, transform in transforms.items()},
         "masks": mapping,
     }
     WEB_EQ.mkdir(parents=True, exist_ok=True)

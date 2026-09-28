@@ -11,10 +11,10 @@
   const RING_PAIRS = RING.map((_, i) => bit(RING[i]) | bit(RING[(i + 1) % RING.length]));
   const INFORMATION_MODEL = 'hidden-attempt-location-no-result-v2';
   const VARIANTS = Object.freeze({
-    standard: Object.freeze({ variantId: 'standard', rulesVersion: 1, name: 'Hidden Tiles', playableMask: FULL_MASK, allowHiddenOpening: true, objective: 'three-in-row', winningPatterns: WIN_MASKS, losingPatterns: [] }),
-    'no-hidden-opening': Object.freeze({ variantId: 'no-hidden-opening', rulesVersion: 1, name: 'No Hidden Opening Move', playableMask: FULL_MASK, allowHiddenOpening: false, objective: 'three-in-row', winningPatterns: WIN_MASKS, losingPatterns: [] }),
-    'no-center-ring': Object.freeze({ variantId: 'no-center-ring', rulesVersion: 1, name: 'No Center', playableMask: FULL_MASK ^ bit(4), allowHiddenOpening: true, objective: 'three-in-ring', winningPatterns: RING_TRIPLES, losingPatterns: [] }),
-    'no-center-ring-pair-loss': Object.freeze({ variantId: 'no-center-ring-pair-loss', rulesVersion: 1, name: 'No Center · Pairs Lose', playableMask: FULL_MASK ^ bit(4), allowHiddenOpening: true, objective: 'adjacent-pair-loss', winningPatterns: [], losingPatterns: RING_PAIRS })
+    standard: Object.freeze({ variantId: 'standard', rulesVersion: 1, name: 'Hidden Tiles', topology: 'grid', playableMask: FULL_MASK, allowHiddenOpening: true, objective: 'three-in-row', winningPatterns: WIN_MASKS, losingPatterns: [] }),
+    'no-hidden-opening': Object.freeze({ variantId: 'no-hidden-opening', rulesVersion: 1, name: 'No Hidden Opening Move', topology: 'grid', playableMask: FULL_MASK, allowHiddenOpening: false, objective: 'three-in-row', winningPatterns: WIN_MASKS, losingPatterns: [] }),
+    'no-center-ring': Object.freeze({ variantId: 'no-center-ring', rulesVersion: 1, name: 'No Center', topology: 'ring', playableMask: FULL_MASK ^ bit(4), allowHiddenOpening: true, objective: 'three-in-ring', winningPatterns: RING_TRIPLES, losingPatterns: [] }),
+    'no-center-ring-pair-loss': Object.freeze({ variantId: 'no-center-ring-pair-loss', rulesVersion: 1, name: 'No Center · Pairs Lose', topology: 'ring', playableMask: FULL_MASK ^ bit(4), allowHiddenOpening: true, objective: 'adjacent-pair-loss', winningPatterns: [], losingPatterns: RING_PAIRS })
   });
 
   function other(player) { return player === O ? X : O; }

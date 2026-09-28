@@ -34,8 +34,8 @@ class VariantRuleTests(unittest.TestCase):
         self.assertEqual(lp.terminal_winner(state, rules), lp.X)
         self.assertIn((1 << 3) | (1 << 0), RING_PAIRS)
 
-    def test_d4_symmetry_preserves_every_variant_rule(self):
-        for variant in ("standard", "no-hidden-opening", "no-center-ring", "no-center-ring-pair-loss"):
+    def test_d4_symmetry_preserves_grid_variant_rules(self):
+        for variant in ("standard", "no-hidden-opening"):
             spec = variant_spec(variant)
             winning = set(spec.winning_patterns)
             losing = set(spec.losing_patterns)
@@ -43,6 +43,25 @@ class VariantRuleTests(unittest.TestCase):
                 self.assertEqual(batch.transform_mask(spec.playable_mask, transform), spec.playable_mask)
                 self.assertEqual({batch.transform_mask(pattern, transform) for pattern in winning}, winning)
                 self.assertEqual({batch.transform_mask(pattern, transform) for pattern in losing}, losing)
+
+    def test_d8_symmetry_preserves_ring_variant_rules(self):
+        for variant in ("no-center-ring", "no-center-ring-pair-loss"):
+            spec = variant_spec(variant)
+            winning = set(spec.winning_patterns)
+            losing = set(spec.losing_patterns)
+            for transform in batch.RING_TRANSFORMS.values():
+                self.assertEqual(batch.transform_mask(spec.playable_mask, transform), spec.playable_mask)
+                self.assertEqual({batch.transform_mask(pattern, transform) for pattern in winning}, winning)
+                self.assertEqual({batch.transform_mask(pattern, transform) for pattern in losing}, losing)
+
+    def test_ring_symmetry_collapses_to_28_canonical_hidden_masks(self):
+        for variant in ("no-center-ring", "no-center-ring-pair-loss"):
+            spec = variant_spec(variant)
+            canonical_masks = {
+                batch.canonicalize(mask, batch.RING_TRANSFORMS)[0]
+                for mask in batch.raw_masks("all", spec.playable_mask, spec.allow_hidden_opening)
+            }
+            self.assertEqual(len(canonical_masks), 28)
 
     def test_python_native_counts_match_on_small_games_for_all_variants(self):
         root = lp.State(
