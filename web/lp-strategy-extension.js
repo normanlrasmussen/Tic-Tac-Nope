@@ -10,8 +10,11 @@
   const CERTIFICATE_TOLERANCE = 1e-7;
   const LEGACY_STANDARD_RULES_VERSION = 1;
   const artifacts = new Map();
+  const artifactLoads = new Map();
   let manifest = { artifacts: [] };
+  let artifactEntries = [];
   let symmetryMap = { masks: {} };
+  let loadGeneration = 0;
 
   const lpStrategy = { id: ID, name: NAME, family: 'Certified sequence-form equilibrium', play: true, sim: false };
   if (!T.STRATEGIES.some((s) => s.id === ID)) T.STRATEGIES.splice(1, 0, lpStrategy);
@@ -162,6 +165,69 @@
     return currentModelArtifact(artifact, rules.variantId || 'standard') ? artifact : null;
   }
 
+  function entryKey(mask, startPlayer, variant) {
+    return configKey(mask, startPlayer, variant);
+  }
+
+  function entryFor(mask, startPlayer, variant) {
+    const player = symbol(startPlayer);
+    return artifactEntries.find((entry) => (
+      Number(entry.hiddenMask) === Number(mask)
+      && entry.startPlayer === player
+      && (entry.variant || 'standard') === variant
+    )) || null;
+  }
+
+  async function loadArtifactEntry(entry, variant) {
+    if (!entry) return null;
+    const startPlayer = entry.startPlayer === 'O' ? T.O : entry.startPlayer === 'X' ? T.X : null;
+    if (startPlayer === null) return null;
+    const key = entryKey(entry.hiddenMask, startPlayer, variant);
+    if (artifacts.has(key)) return artifacts.get(key);
+    if (artifactLoads.has(key)) return artifactLoads.get(key);
+
+    const request = (async () => {
+      try {
+        const result = await fetch(`./equilibria/${entry.file}`, { cache: 'no-store' });
+        if (!result.ok) throw new Error(`HTTP ${result.status}`);
+        const artifact = await result.json();
+        if (!currentModelArtifact(artifact, variant)) {
+          throw new Error('artifact is stale, uncertified, or failed certificate validation');
+        }
+        if (
+          Number(artifact.hiddenMask) !== Number(entry.hiddenMask)
+          || artifact.startPlayer !== entry.startPlayer
+          || artifact.informationModel !== entry.informationModel
+          || (artifact.variant || 'standard') !== variant
+        ) {
+          throw new Error('artifact metadata does not match its manifest entry');
+        }
+        if (artifacts.has(key)) throw new Error(`duplicate exact artifact for ${key}`);
+        artifacts.set(key, artifact);
+        return artifact;
+      } catch (error) {
+        console.error('Failed to load certified Exact Nash artifact', entry, error);
+        return null;
+      }
+    })();
+    artifactLoads.set(key, request);
+    return request;
+  }
+
+  async function loadSelectedArtifacts(generation = loadGeneration) {
+    const cfg = selectedConfiguration();
+    const symmetry = symmetryForMask(cfg.mask);
+    if (!symmetry || generation !== loadGeneration) {
+      refreshSelectors();
+      return;
+    }
+    const entries = [T.O, T.X].map((player) => entryFor(symmetry.canonicalMask, player, cfg.variantId));
+    await Promise.all(entries.map((entry) => loadArtifactEntry(entry, cfg.variantId)));
+    if (generation !== loadGeneration) return;
+    refreshSelectors();
+    window.dispatchEvent(new CustomEvent('ttn-lp-artifacts-loaded', { detail: { count: artifacts.size } }));
+  }
+
   function exactPolicy(state, rules) {
     const symmetry = symmetryForMask(rules.hiddenMask);
     if (!symmetry) {
@@ -298,6 +364,9 @@
   function refreshSelectors() {
     const cfg = selectedConfiguration();
     const available = Boolean(artifactForRules({ hiddenMask: cfg.mask, startPlayer: cfg.startPlayer, variantId: cfg.variantId }));
+    const symmetry = symmetryForMask(cfg.mask);
+    const expectedKey = symmetry ? entryKey(symmetry.canonicalMask, cfg.startPlayer, cfg.variantId) : null;
+    const loading = Boolean(expectedKey && artifactLoads.has(expectedKey) && !artifacts.has(expectedKey));
     for (const id of ['ai-strategy', 'decision-strategy']) {
       const select = document.getElementById(id);
       if (!select) continue;
@@ -305,18 +374,29 @@
       option.disabled = !available;
       option.textContent = available
         ? `${NAME} · locally solved static policy`
-        : `${NAME} · current-model local artifact not published`;
+        : loading
+          ? `${NAME} · loading selected layout…`
+          : `${NAME} · current-model local artifact not published`;
+      if (!available && select.value === ID) {
+        select.value = 'belief';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      }
     }
     const note = document.getElementById('lp-online-status');
     if (note) {
       note.textContent = available
         ? 'A current-model LP policy generated locally is loaded for the selected mystery cells and turn order. Symmetric board configurations reuse the corresponding canonical artifact. The browser only performs a static policy lookup; it never solves an LP.'
-        : 'No current-model LP artifact is published for this mystery-cell symmetry class / starting-player configuration. Exact Nash is unavailable; no substitute strategy will be used.';
+        : loading
+          ? 'Loading the two policies needed for the selected board and opening role.'
+          : 'No current-model LP artifact is published for this mystery-cell symmetry class / starting-player configuration. Exact Nash is unavailable; no substitute strategy will be used.';
     }
   }
 
   async function loadArtifacts() {
+    const generation = ++loadGeneration;
     artifacts.clear();
+    artifactLoads.clear();
+    artifactEntries = [];
     const variant = window.TTNActiveVariant || 'standard';
     try {
       let response = await fetch(`./equilibria/${variant}/manifest.json`, { cache: 'no-store' });
@@ -340,43 +420,22 @@
       }
 
       const entries = Array.isArray(manifest.artifacts) ? manifest.artifacts : [];
-      const compatibleEntries = entries.filter((entry) => entry.informationModel === T.INFORMATION_MODEL && (entry.variant || 'standard') === variant);
-      await Promise.all(compatibleEntries.map(async (entry) => {
-        try {
-          const result = await fetch(`./equilibria/${entry.file}`, { cache: 'no-store' });
-          if (!result.ok) throw new Error(`HTTP ${result.status}`);
-          const artifact = await result.json();
-          if (!currentModelArtifact(artifact, variant)) {
-            throw new Error('artifact is stale, uncertified, or failed certificate validation');
-          }
-          if (
-            Number(artifact.hiddenMask) !== Number(entry.hiddenMask)
-            || artifact.startPlayer !== entry.startPlayer
-            || artifact.informationModel !== entry.informationModel
-            || (artifact.variant || 'standard') !== variant
-          ) {
-            throw new Error('artifact metadata does not match its manifest entry');
-          }
-          const startPlayer = artifact.startPlayer === 'O' ? T.O : artifact.startPlayer === 'X' ? T.X : null;
-          if (startPlayer === null) throw new Error(`invalid startPlayer ${artifact.startPlayer}`);
-          const key = configKey(artifact.hiddenMask, startPlayer, variant);
-          if (artifacts.has(key)) throw new Error(`duplicate exact artifact for ${key}`);
-          artifacts.set(key, artifact);
-        } catch (error) {
-          console.error('Failed to load certified Exact Nash artifact', entry, error);
-        }
-      }));
-      if (entries.length !== compatibleEntries.length) {
-        console.info(`Ignored ${entries.length - compatibleEntries.length} LP manifest entries from an older information model.`);
+      artifactEntries = entries.filter((entry) => entry.informationModel === T.INFORMATION_MODEL && (entry.variant || 'standard') === variant);
+      await loadSelectedArtifacts(generation);
+      if (entries.length !== artifactEntries.length) {
+        console.info(`Ignored ${entries.length - artifactEntries.length} LP manifest entries from an older information model.`);
       }
     } catch (error) {
       console.error('Exact LP manifest unavailable; Exact Nash is disabled.', error);
       manifest = { artifacts: [] };
+      artifactEntries = [];
       symmetryMap = { masks: {} };
       artifacts.clear();
     }
     refreshSelectors();
-    window.dispatchEvent(new CustomEvent('ttn-lp-artifacts-loaded', { detail: { count: artifacts.size } }));
+    if (generation === loadGeneration && !artifactEntries.length) {
+      window.dispatchEvent(new CustomEvent('ttn-lp-artifacts-loaded', { detail: { count: 0 } }));
+    }
   }
 
   function addStrategySection() {
@@ -420,9 +479,9 @@
   addStrategySection();
   addAnalysisBenchmarkPanel();
   refreshSelectors();
-  document.getElementById('hidden-picker')?.addEventListener('click', () => setTimeout(refreshSelectors, 0));
-  document.getElementById('turn-order')?.addEventListener('click', () => setTimeout(refreshSelectors, 0));
-  document.getElementById('new-game')?.addEventListener('click', () => setTimeout(refreshSelectors, 0));
+  document.getElementById('hidden-picker')?.addEventListener('click', () => setTimeout(() => loadSelectedArtifacts(), 0));
+  document.getElementById('turn-order')?.addEventListener('click', () => setTimeout(() => loadSelectedArtifacts(), 0));
+  document.getElementById('new-game')?.addEventListener('click', () => setTimeout(() => loadSelectedArtifacts(), 0));
   document.addEventListener('ttn-variant-changed', () => loadArtifacts());
   loadArtifacts();
 })();

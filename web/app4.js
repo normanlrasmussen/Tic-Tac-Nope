@@ -1,20 +1,20 @@
 (function () {
   'use strict';
 
-  function loadStyle(href) {
-    if (document.querySelector(`link[href="${href}"]`)) return;
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = href;
-    document.head.appendChild(link);
-  }
-
-  function loadScript(src, onload) {
-    const script = document.createElement('script');
-    script.src = src;
-    script.onload = onload || null;
-    script.onerror = () => console.error(`Failed to load ${src}`);
-    document.head.appendChild(script);
+  function loadScript(src) {
+    const existing = document.querySelector(`script[src="${src}"]`);
+    if (existing?.dataset.loaded === 'true') return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const script = existing || document.createElement('script');
+      script.src = src;
+      script.async = false;
+      script.onload = () => {
+        script.dataset.loaded = 'true';
+        resolve();
+      };
+      script.onerror = () => reject(new Error(`Failed to load ${src}`));
+      if (!existing) document.head.appendChild(script);
+    });
   }
 
   function rewriteLpTheoryLinks() {
@@ -50,55 +50,54 @@
     if (target) target.click();
   }
 
-  loadStyle('./legacy-reset.css');
+  async function boot() {
+    // The research update must run before the core initializes its selectors.
+    await loadScript('./strategy-research-update.js');
+    await loadScript('./app4-core.js');
+    if (window.TTNResearchUpdate?.afterCore) window.TTNResearchUpdate.afterCore();
 
-  loadScript('./strategy-research-update.js', () => {
-    loadScript('./app4-core.js', () => {
-      if (window.TTNResearchUpdate?.afterCore) window.TTNResearchUpdate.afterCore();
-      loadScript('./decision-strategy-control.js', () => {
-        if (window.TTNDecisionStrategyControl?.install) window.TTNDecisionStrategyControl.install();
-        loadScript('./round-robin-controls.js', () => {
-          if (window.TTNRoundRobinControls?.install) window.TTNRoundRobinControls.install();
-          loadScript('./strategy-data.js', () => {
-            loadScript('./strategy-guide.js', () => {
-              loadScript('./lp-strategy-extension.js', () => {
-                loadScript('./best-tie-highlights.js', () => {
-                  if (window.TTNBestTieHighlights?.install) window.TTNBestTieHighlights.install();
-                  loadScript('./nash-benchmark.js', () => {
-                    loadScript('./lp-research-page.js', () => {
-                      if (window.TTNLPResearch?.install) window.TTNLPResearch.install();
-                      rewriteLpTheoryLinks();
-                      loadScript('./nash-atlas.js', () => {
-                        if (window.TTNNashAtlas?.install) window.TTNNashAtlas.install();
-                        syncResearchTabs();
-                        loadScript('./ux-refresh.js', () => {
-                          syncResearchTabs();
-                          loadScript('./coach-all-strategies.js', () => {
-                            if (window.TTNCoachAllStrategies?.install) window.TTNCoachAllStrategies.install();
-                            syncResearchTabs();
-                            rewriteLpTheoryLinks();
-                            loadScript('./playground-mode.js', () => {
-                              if (window.TTNPlaygroundMode?.install) window.TTNPlaygroundMode.install();
-                              loadScript('./lp-first-ordering.js', () => {
-                                if (window.TTNLPFirstOrdering?.install) window.TTNLPFirstOrdering.install();
-                                syncResearchTabs();
-                                rewriteLpTheoryLinks();
-                                openHashPage();
-                              });
-                            });
-                          });
-                        });
-                      });
-                    });
-                  });
-                });
-              });
-            });
-          });
-        });
-      });
-    });
-  });
+    // These modules only define their public hooks or operate on independent
+    // pages. Loading them together removes the old request waterfall.
+    await Promise.all([
+      loadScript('./decision-strategy-control.js'),
+      loadScript('./round-robin-controls.js'),
+      loadScript('./strategy-data.js')
+    ]);
+    if (window.TTNDecisionStrategyControl?.install) window.TTNDecisionStrategyControl.install();
+    if (window.TTNRoundRobinControls?.install) window.TTNRoundRobinControls.install();
+
+    // The guide renders immediately and the LP extension appends its section
+    // to that guide, so keep this small dependency chain explicit.
+    await loadScript('./strategy-guide.js');
+    await loadScript('./lp-strategy-extension.js');
+
+    await Promise.all([
+      loadScript('./best-tie-highlights.js'),
+      loadScript('./nash-benchmark.js'),
+      loadScript('./nash-atlas.js'),
+      loadScript('./ux-refresh.js')
+    ]);
+    if (window.TTNBestTieHighlights?.install) window.TTNBestTieHighlights.install();
+
+    await loadScript('./lp-research-page.js');
+    if (window.TTNLPResearch?.install) window.TTNLPResearch.install();
+    rewriteLpTheoryLinks();
+
+    await loadScript('./coach-all-strategies.js');
+    if (window.TTNCoachAllStrategies?.install) window.TTNCoachAllStrategies.install();
+    syncResearchTabs();
+
+    await loadScript('./playground-mode.js');
+    if (window.TTNPlaygroundMode?.install) window.TTNPlaygroundMode.install();
+
+    await loadScript('./lp-first-ordering.js');
+    if (window.TTNLPFirstOrdering?.install) window.TTNLPFirstOrdering.install();
+    syncResearchTabs();
+    rewriteLpTheoryLinks();
+    openHashPage();
+  }
+
+  boot().catch((error) => console.error('Tic-Tac-Nope failed to initialize', error));
 
   window.addEventListener('hashchange', openHashPage);
 })();
