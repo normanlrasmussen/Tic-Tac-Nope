@@ -245,9 +245,21 @@ def _solve_gurobi_reduced(E, e, F, f, payoff, n_x, n_p, *, method: int = -1):
     if crossover not in (-1, 0, 1, 2, 3, 4):
         raise ValueError("TTN_GUROBI_CROSSOVER must be -1 or an integer from 0 to 4")
     model.Params.Crossover = crossover
-    model.Params.FeasibilityTol = prod.FEASIBILITY_TOLERANCE
-    model.Params.OptimalityTol = prod.FEASIBILITY_TOLERANCE
-    model.Params.BarConvTol = prod.FEASIBILITY_TOLERANCE
+    # Keep solver tolerances below the certificate tolerance.  Setting these
+    # to the same 1e-7 value allowed Gurobi to return an optimal status while
+    # the independently reconstructed certificate was just outside its
+    # 1e-7 acceptance budget (for example, 1.184e-7).
+    # The override is useful for licensed-machine benchmarking, but the
+    # production default is deliberately stricter than the certificate.
+    try:
+        solver_tolerance = float(os.environ.get("TTN_GUROBI_TOLERANCE", "1e-9"))
+    except ValueError as error:
+        raise ValueError("TTN_GUROBI_TOLERANCE must be a finite number in [1e-9, 1e-7]") from error
+    if not np.isfinite(solver_tolerance) or not 1e-9 <= solver_tolerance <= prod.FEASIBILITY_TOLERANCE:
+        raise ValueError("TTN_GUROBI_TOLERANCE must be a finite number in [1e-9, 1e-7]")
+    model.Params.FeasibilityTol = solver_tolerance
+    model.Params.OptimalityTol = solver_tolerance
+    model.Params.BarConvTol = solver_tolerance
 
     lower = np.concatenate([np.zeros(n_x), np.full(n_p, -gp.GRB.INFINITY)])
     variables = model.addMVar(n_x + n_p, lb=lower, name="augmented")
@@ -283,6 +295,7 @@ def _solve_gurobi_reduced(E, e, F, f, payoff, n_x, n_p, *, method: int = -1):
         "optimizeSeconds": optimize_seconds,
         "gurobiMethod": configured_method,
         "gurobiCrossover": crossover,
+        "gurobiTolerance": solver_tolerance,
     }
     return result
 
