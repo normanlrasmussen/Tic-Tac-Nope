@@ -135,3 +135,50 @@ footer{display:flex;justify-content:space-between;gap:20px;margin-top:34px;paddi
 .cell.unavailable,.picker-cell.unavailable{background:repeating-linear-gradient(135deg,rgba(0,0,0,.08) 0 5px,transparent 5px 10px);color:var(--muted,#777);opacity:.55;cursor:not-allowed}
 .cell.unavailable{pointer-events:none}
 @media(max-width:1100px){.variant-nav{width:100%;margin:8px 0 0}.topbar{flex-wrap:wrap}}
+
+
+/* Ring variants are eight-cell cycles. Keep board indices stable in the DOM, but
+   present cell 5 as a genuine hole instead of a disabled tic-tac-toe square. */
+html[data-ttn-topology="ring"] :is(
+  .board,
+  .local-board,
+  .hidden-picker,
+  .sync-picker,
+  .analysis-hidden-mini,
+  .analysis-live-board,
+  .strategy-score-board,
+  .timeline-board,
+  .terminal-board-grid,
+  .playground-board,
+  .playground-score-grid,
+  .lp-policy-board
+) > :nth-child(5){
+  visibility:hidden!important;
+  pointer-events:none!important;
+}
+
+html[data-ttn-topology="ring"] :is(.board,.local-board){
+  padding:clamp(8px,2vw,18px);
+  border-radius:50%;
+  background:
+    radial-gradient(circle at center,transparent 0 23%,rgba(49,95,86,.13) 23.5% 24.5%,transparent 25% 100%);
+  box-shadow:inset 0 0 0 1px rgba(49,95,86,.10);
+}
+html[data-ttn-topology="ring"] :is(.board>.cell,.local-board>.local-cell){
+  border-radius:50%;
+}
+html[data-ttn-topology="ring"] :is(.hidden-picker,.sync-picker){
+  padding:7px;
+  border:1px solid rgba(49,95,86,.10);
+  border-radius:24px;
+  background:
+    radial-gradient(circle at center,transparent 0 23%,rgba(49,95,86,.10) 23.5% 24.5%,transparent 25% 100%);
+}
+html[data-ttn-topology="ring"] :is(.hidden-picker>.picker-cell,.sync-picker>button){
+  border-radius:50%;
+}
+html[data-ttn-topology="ring"] :is(.cell.unavailable,.picker-cell.unavailable,.local-cell.unavailable){
+  opacity:0!important;
+  border-color:transparent!important;
+  background:transparent!important;
+}
