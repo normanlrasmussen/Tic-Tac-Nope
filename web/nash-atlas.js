@@ -289,8 +289,8 @@
       const symmetryUrl = `./equilibria/${variant}/symmetry-map.json`;
       let manifestResponse = await fetch(manifestUrl, { cache: 'no-cache' });
       if (!manifestResponse.ok && variant === 'standard') manifestResponse = await fetch('./equilibria/manifest.json', { cache: 'no-cache' });
-      let symmetryResponse = await fetch(symmetryUrl, { cache: 'force-cache' });
-      if (!symmetryResponse.ok && variant === 'standard') symmetryResponse = await fetch('./equilibria/symmetry-map.json', { cache: 'force-cache' });
+      let symmetryResponse = await fetch(symmetryUrl, { cache: 'no-cache' });
+      if (!symmetryResponse.ok && variant === 'standard') symmetryResponse = await fetch('./equilibria/symmetry-map.json', { cache: 'no-cache' });
       if (!manifestResponse.ok) throw new Error(`manifest HTTP ${manifestResponse.status}`);
       const manifest = await manifestResponse.json();
       symmetryMap = symmetryResponse.ok ? await symmetryResponse.json() : { masks: {} };
