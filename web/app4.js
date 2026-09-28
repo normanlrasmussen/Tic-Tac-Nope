@@ -78,6 +78,7 @@
       loadScript('./ux-refresh.js')
     ]);
     if (window.TTNBestTieHighlights?.install) window.TTNBestTieHighlights.install();
+    if (window.TTNNashAtlas?.install) window.TTNNashAtlas.install();
 
     await loadScript('./lp-research-page.js');
     if (window.TTNLPResearch?.install) window.TTNLPResearch.install();
